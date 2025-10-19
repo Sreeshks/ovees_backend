@@ -43,7 +43,7 @@ app.include_router(public_router)
 @app.get("/")
 def root():
     return {
-        "message": "Welcome to Ovees Jewelry Store API",
+        "message": "Welcome to Ovees Backend API",
         "version": "1.0.0",
         "docs": "/docs",
         "redoc": "/redoc"
