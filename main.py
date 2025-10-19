@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
@@ -9,13 +10,24 @@ from routers import admin_router, public_router
 # Load environment variables
 load_dotenv()
 
+# Lifespan context manager for startup/shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    init_db()
+    print("✅ Database initialized successfully!")
+    yield
+    # Shutdown (cleanup if needed)
+    print("👋 Shutting down...")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Ovees Jewelry Store API",
     description="Backend API for Ovees Jewelry E-commerce Platform",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS Configuration
@@ -28,12 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize database
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    print("✅ Database initialized successfully!")
 
 # Include routers
 app.include_router(admin_router)
