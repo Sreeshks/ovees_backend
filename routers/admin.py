@@ -1,21 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import timedelta
+import json
 
 from database import get_db
-from models import Product, Category, Combo, ComboProduct, NewArrival, Admin
+from models import Product, Category, Combo, ComboProduct, NewArrival, Admin, Banner
 from schemas import (
     ProductCreate, ProductUpdate, ProductResponse,
     CategoryCreate, CategoryUpdate, CategoryResponse,
     ComboCreate, ComboUpdate, ComboResponse,
     NewArrivalCreate, NewArrivalResponse,
-    AdminLogin, Token, AdminCreate
+    AdminLogin, Token, AdminCreate,
+    BannerCreate, BannerUpdate, BannerResponse
 )
 from utils.auth import (
     verify_password, get_password_hash, create_access_token, 
     get_current_admin, ACCESS_TOKEN_EXPIRE_MINUTES
 )
+from utils.cloudinary_config import upload_image, upload_multiple_images, delete_image
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -61,7 +64,6 @@ def login(credentials: AdminLogin, db: Session = Depends(get_db)):
 
 
 # ==================== CATEGORIES ====================
-
 @router.post("/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 def create_category(
     category: CategoryCreate, 
@@ -125,23 +127,66 @@ def delete_category(
 # ==================== PRODUCTS ====================
 
 @router.post("/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-def create_product(
-    product: ProductCreate,
+async def create_product(
+    product_code: str = Form(...),
+    name: str = Form(...),
+    details: Optional[str] = Form(None),
+    normal_price: float = Form(...),
+    offer_price: Optional[float] = Form(None),
+    category_id: int = Form(...),
+    stock_quantity: int = Form(0),
+    is_active: bool = Form(True),
+    images: Optional[List[UploadFile]] = File(None),
+    image_urls: Optional[str] = Form(None),  # JSON string of URLs if not uploading files
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin)
 ):
-    """Create a new product"""
+    """
+    Create a new product with optional image upload.
+    Can accept either uploaded files or image URLs as JSON string.
+    """
     # Check if product code already exists
-    existing = db.query(Product).filter(Product.product_code == product.product_code).first()
+    existing = db.query(Product).filter(Product.product_code == product_code).first()
     if existing:
         raise HTTPException(status_code=400, detail="Product code already exists")
     
     # Check if category exists
-    category = db.query(Category).filter(Category.id == product.category_id).first()
+    category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     
-    new_product = Product(**product.dict())
+    # Handle images
+    final_image_urls = []
+    
+    # If files are uploaded, upload to Cloudinary
+    if images:
+        for image in images:
+            if not image.content_type.startswith('image/'):
+                raise HTTPException(status_code=400, detail=f"File {image.filename} must be an image")
+            
+            result = await upload_image(image, folder=f"ovees_jewelry/products/{product_code}")
+            final_image_urls.append(result["secure_url"])
+    
+    # If image URLs are provided as JSON string
+    elif image_urls:
+        try:
+            final_image_urls = json.loads(image_urls)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid image_urls JSON format")
+    
+    # Create product
+    new_product = Product(
+        product_code=product_code,
+        name=name,
+        details=details,
+        normal_price=normal_price,
+        offer_price=offer_price,
+        category_id=category_id,
+        images=final_image_urls,
+        stock_quantity=stock_quantity,
+        is_active=is_active
+    )
+    
     db.add(new_product)
     db.commit()
     db.refresh(new_product)
@@ -149,28 +194,76 @@ def create_product(
 
 
 @router.put("/products/{product_code}", response_model=ProductResponse)
-def update_product(
+async def update_product(
     product_code: str,
-    product: ProductUpdate,
+    name: Optional[str] = Form(None),
+    details: Optional[str] = Form(None),
+    normal_price: Optional[float] = Form(None),
+    offer_price: Optional[float] = Form(None),
+    category_id: Optional[int] = Form(None),
+    stock_quantity: Optional[int] = Form(None),
+    is_active: Optional[bool] = Form(None),
+    images: Optional[List[UploadFile]] = File(None),
+    image_urls: Optional[str] = Form(None),  # JSON string of URLs
+    replace_images: bool = Form(False),  # If True, replace all images; if False, append
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin)
 ):
-    """Update a product"""
+    """
+    Update a product with optional image upload.
+    Can update product details and handle image uploads or URLs.
+    """
     db_product = db.query(Product).filter(Product.product_code == product_code).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    # Update fields
-    update_data = product.dict(exclude_unset=True)
+    # Update basic fields
+    if name is not None:
+        db_product.name = name
+    if details is not None:
+        db_product.details = details
+    if normal_price is not None:
+        db_product.normal_price = normal_price
+    if offer_price is not None:
+        db_product.offer_price = offer_price
+    if stock_quantity is not None:
+        db_product.stock_quantity = stock_quantity
+    if is_active is not None:
+        db_product.is_active = is_active
     
     # Check if category exists if being updated
-    if "category_id" in update_data:
-        category = db.query(Category).filter(Category.id == update_data["category_id"]).first()
+    if category_id is not None:
+        category = db.query(Category).filter(Category.id == category_id).first()
         if not category:
             raise HTTPException(status_code=404, detail="Category not found")
+        db_product.category_id = category_id
     
-    for key, value in update_data.items():
-        setattr(db_product, key, value)
+    # Handle images
+    new_image_urls = []
+    
+    # If files are uploaded, upload to Cloudinary
+    if images:
+        for image in images:
+            if not image.content_type.startswith('image/'):
+                raise HTTPException(status_code=400, detail=f"File {image.filename} must be an image")
+            
+            result = await upload_image(image, folder=f"ovees_jewelry/products/{product_code}")
+            new_image_urls.append(result["secure_url"])
+    
+    # If image URLs are provided as JSON string
+    elif image_urls:
+        try:
+            new_image_urls = json.loads(image_urls)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid image_urls JSON format")
+    
+    # Update images based on replace_images flag
+    if new_image_urls:
+        if replace_images:
+            db_product.images = new_image_urls
+        else:
+            existing_images = db_product.images or []
+            db_product.images = existing_images + new_image_urls
     
     db.commit()
     db.refresh(db_product)
@@ -352,3 +445,205 @@ def toggle_new_arrival(
     db.commit()
     db.refresh(new_arrival)
     return new_arrival
+
+
+# ==================== BANNERS ====================
+
+@router.post("/banners/upload", response_model=BannerResponse, status_code=status.HTTP_201_CREATED)
+async def upload_banner(
+    image: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    link_url: Optional[str] = Form(None),
+    display_order: int = Form(0),
+    is_active: bool = Form(True),
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Upload a new banner image"""
+    # Validate file type
+    if not image.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    # Upload to Cloudinary
+    result = await upload_image(image, folder="ovees_jewelry/banners")
+    
+    # Create banner record
+    new_banner = Banner(
+        title=title,
+        image_url=result["secure_url"],
+        public_id=result["public_id"],
+        link_url=link_url,
+        display_order=display_order,
+        is_active=is_active
+    )
+    
+    db.add(new_banner)
+    db.commit()
+    db.refresh(new_banner)
+    return new_banner
+
+
+@router.post("/banners/upload-multiple", response_model=List[BannerResponse], status_code=status.HTTP_201_CREATED)
+async def upload_multiple_banners(
+    images: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Upload multiple banner images at once"""
+    # Validate file types
+    for image in images:
+        if not image.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail=f"File {image.filename} must be an image")
+    
+    # Get the highest current display_order
+    max_order = db.query(Banner).count()
+    
+    uploaded_banners = []
+    for idx, image in enumerate(images):
+        # Upload to Cloudinary
+        result = await upload_image(image, folder="ovees_jewelry/banners")
+        
+        # Create banner record
+        new_banner = Banner(
+            title=f"Banner {max_order + idx + 1}",
+            image_url=result["secure_url"],
+            public_id=result["public_id"],
+            display_order=max_order + idx,
+            is_active=True
+        )
+        
+        db.add(new_banner)
+        uploaded_banners.append(new_banner)
+    
+    db.commit()
+    
+    # Refresh all banners
+    for banner in uploaded_banners:
+        db.refresh(banner)
+    
+    return uploaded_banners
+
+
+@router.get("/banners", response_model=List[BannerResponse])
+def get_all_banners_admin(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Get all banners (admin view - includes inactive)"""
+    banners = db.query(Banner).order_by(Banner.display_order).offset(skip).limit(limit).all()
+    return banners
+
+
+@router.get("/banners/{banner_id}", response_model=BannerResponse)
+def get_banner_admin(
+    banner_id: int,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Get a single banner"""
+    banner = db.query(Banner).filter(Banner.id == banner_id).first()
+    if not banner:
+        raise HTTPException(status_code=404, detail="Banner not found")
+    return banner
+
+
+@router.put("/banners/{banner_id}", response_model=BannerResponse)
+def update_banner(
+    banner_id: int,
+    banner_update: BannerUpdate,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Update banner details"""
+    banner = db.query(Banner).filter(Banner.id == banner_id).first()
+    if not banner:
+        raise HTTPException(status_code=404, detail="Banner not found")
+    
+    # Update fields
+    update_data = banner_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(banner, key, value)
+    
+    db.commit()
+    db.refresh(banner)
+    return banner
+
+
+@router.put("/banners/{banner_id}/reorder", response_model=BannerResponse)
+def reorder_banner(
+    banner_id: int,
+    new_order: int,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Change the display order of a banner"""
+    banner = db.query(Banner).filter(Banner.id == banner_id).first()
+    if not banner:
+        raise HTTPException(status_code=404, detail="Banner not found")
+    
+    old_order = banner.display_order
+    
+    # Update other banners' order
+    if new_order < old_order:
+        # Moving up: increment orders between new and old
+        db.query(Banner).filter(
+            Banner.display_order >= new_order,
+            Banner.display_order < old_order,
+            Banner.id != banner_id
+        ).update({Banner.display_order: Banner.display_order + 1})
+    elif new_order > old_order:
+        # Moving down: decrement orders between old and new
+        db.query(Banner).filter(
+            Banner.display_order > old_order,
+            Banner.display_order <= new_order,
+            Banner.id != banner_id
+        ).update({Banner.display_order: Banner.display_order - 1})
+    
+    # Update the banner's order
+    banner.display_order = new_order
+    
+    db.commit()
+    db.refresh(banner)
+    return banner
+
+
+@router.delete("/banners/{banner_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_banner(
+    banner_id: int,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Delete a banner (also removes from Cloudinary)"""
+    banner = db.query(Banner).filter(Banner.id == banner_id).first()
+    if not banner:
+        raise HTTPException(status_code=404, detail="Banner not found")
+    
+    # Delete from Cloudinary
+    try:
+        delete_image(banner.public_id)
+    except Exception as e:
+        print(f"Warning: Failed to delete image from Cloudinary: {str(e)}")
+    
+    # Delete from database
+    db.delete(banner)
+    db.commit()
+    return None
+
+
+@router.patch("/banners/{banner_id}/toggle", response_model=BannerResponse)
+def toggle_banner(
+    banner_id: int,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Toggle active status of a banner"""
+    banner = db.query(Banner).filter(Banner.id == banner_id).first()
+    if not banner:
+        raise HTTPException(status_code=404, detail="Banner not found")
+    
+    banner.is_active = not banner.is_active
+    db.commit()
+    db.refresh(banner)
+    return banner

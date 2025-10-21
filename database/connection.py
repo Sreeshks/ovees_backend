@@ -30,5 +30,5 @@ def get_db():
 
 # Initialize database
 def init_db():
-    from models import Product, Category, Combo, ComboProduct, NewArrival, Admin
+    from models import Product, Category, Combo, ComboProduct, NewArrival, Admin, Banner
     Base.metadata.create_all(bind=engine)

@@ -11,7 +11,8 @@ class Product(Base):
     product_code = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     details = Column(String, nullable=True)
-    price = Column(Float, nullable=False, index=True)
+    normal_price = Column(Float, nullable=False, index=True)  # Original/MRP price
+    offer_price = Column(Float, nullable=True, index=True)  # Discounted/Offer price (optional)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
     images = Column(JSON, default=list)  # List of image URLs
     stock_quantity = Column(Integer, default=0)

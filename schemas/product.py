@@ -7,7 +7,8 @@ from .category import CategoryResponse
 class ProductBase(BaseModel):
     name: str
     details: Optional[str] = None
-    price: float = Field(..., gt=0)
+    normal_price: float = Field(..., gt=0, description="Original/MRP price")
+    offer_price: Optional[float] = Field(None, gt=0, description="Discounted/Offer price (optional)")
     category_id: int
     images: Optional[List[str]] = []
     stock_quantity: int = Field(default=0, ge=0)
@@ -21,7 +22,8 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     details: Optional[str] = None
-    price: Optional[float] = Field(None, gt=0)
+    normal_price: Optional[float] = Field(None, gt=0)
+    offer_price: Optional[float] = Field(None, gt=0)
     category_id: Optional[int] = None
     images: Optional[List[str]] = None
     stock_quantity: Optional[int] = Field(None, ge=0)
