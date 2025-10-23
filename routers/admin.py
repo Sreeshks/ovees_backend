@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import timedelta
@@ -21,6 +23,26 @@ from utils.auth import (
 from utils.cloudinary_config import upload_image, upload_multiple_images, delete_image
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+templates = Jinja2Templates(directory="templates")
+
+
+@router.get("/", response_class=HTMLResponse)
+def admin_root():
+    """Redirect to admin dashboard."""
+    return RedirectResponse(url="/admin/dashboard")
+
+
+@router.get("/login", response_class=HTMLResponse)
+def admin_login_page(request: Request):
+    """Serve admin login page."""
+    return templates.TemplateResponse("admin/login.html", {"request": request})
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+def admin_dashboard_page(request: Request):
+    """Serve admin dashboard UI. Client-side JS handles auth and API calls."""
+    return templates.TemplateResponse("admin/index.html", {"request": request})
 
 
 # ==================== AUTHENTICATION ====================

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ovees Eleganza Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <i class="fas fa-gem"></i>
+      <span class="brand-text">Ovees</span>
+    </div>
+    <nav>
+      <a href="#dashboard" class="nav-item active" data-section="dashboard">
+        <i class="fas fa-home"></i>
+        <span>Dashboard</span>
+      </a>
+      <a href="#products" class="nav-item" data-section="products">
+        <i class="fas fa-box"></i>
+        <span>Products</span>
+      </a>
+      <a href="#categories" class="nav-item" data-section="categories">
+        <i class="fas fa-tags"></i>
+        <span>Categories</span>
+      </a>
+      <a href="#banners" class="nav-item" data-section="banners">
+        <i class="fas fa-image"></i>
+        <span>Banners</span>
+      </a>
+      <a href="#combos" class="nav-item" data-section="combos">
+        <i class="fas fa-layer-group"></i>
+        <span>Combos</span>
+      </a>
+      <a href="#new-arrivals" class="nav-item" data-section="new-arrivals">
+        <i class="fas fa-star"></i>
+        <span>New Arrivals</span>
+      </a>
+      <a href="#settings" class="nav-item" data-section="settings">
+        <i class="fas fa-cog"></i>
+        <span>Settings</span>
+      </a>
+      <a href="#logout" id="logoutBtn" class="nav-item logout">
+        <i class="fas fa-sign-out-alt"></i>
+        <span>Logout</span>
+      </a>
+    </nav>
+  </aside>
+
+  <div class="mobile-overlay" id="mobileOverlay"></div>
+
+  <header class="topbar">
+    <button id="menuToggle" class="menu-toggle">
+      <i class="fas fa-bars"></i>
+    </button>
+    <div class="topbar-title">
+      <i class="fas fa-gem"></i>
+      Admin Dashboard
+    </div>
+    <div class="topbar-actions">
+      <span class="user-badge" id="adminUser">
+        <i class="fas fa-user-shield"></i>
+        <span>Admin</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="content">
+    <!-- Dashboard -->
+    <section id="dashboard" class="panel active">
+      <div class="panel-header">
+        <h2><i class="fas fa-chart-line"></i> Dashboard Overview</h2>
+      </div>
+      <div class="stats-grid" id="statsCards">
+        <!-- Stats inserted by JS -->
+      </div>
+      <div class="recent-activity">
+        <h3><i class="fas fa-clock"></i> Quick Actions</h3>
+        <div class="quick-actions">
+          <button class="action-card" onclick="showCreateProduct()">
+            <i class="fas fa-plus-circle"></i>
+            <span>Add Product</span>
+          </button>
+          <button class="action-card" onclick="showCreateCategory()">
+            <i class="fas fa-folder-plus"></i>
+            <span>Add Category</span>
+          </button>
+          <button class="action-card" onclick="showCreateBanner()">
+            <i class="fas fa-images"></i>
+            <span>Add Banner</span>
+          </button>
+          <button class="action-card" onclick="showCreateCombo()">
+            <i class="fas fa-gift"></i>
+            <span>Add Combo</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Products -->
+    <section id="products" class="panel">
+      <div class="panel-header">
+        <h2><i class="fas fa-box"></i> Products</h2>
+        <button class="btn btn-primary" onclick="showCreateProduct()">
+          <i class="fas fa-plus"></i> Create Product
+        </button>
+      </div>
+      <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input id="productSearch" placeholder="Search products by name or code..." />
+      </div>
+      <div id="productsList" class="items-grid"></div>
+    </section>
+
+    <!-- Categories -->
+    <section id="categories" class="panel">
+      <div class="panel-header">
+        <h2><i class="fas fa-tags"></i> Categories</h2>
+        <button class="btn btn-primary" onclick="showCreateCategory()">
+          <i class="fas fa-plus"></i> Create Category
+        </button>
+      </div>
+      <div id="categoriesList" class="items-grid"></div>
+    </section>
+
+    <!-- Banners -->
+    <section id="banners" class="panel">
+      <div class="panel-header">
+        <h2><i class="fas fa-image"></i> Banners</h2>
+        <button class="btn btn-primary" onclick="showCreateBanner()">
+          <i class="fas fa-plus"></i> Upload Banners
+        </button>
+      </div>
+      <div id="bannersList" class="items-grid"></div>
+    </section>
+
+    <!-- Combos -->
+    <section id="combos" class="panel">
+      <div class="panel-header">
+        <h2><i class="fas fa-layer-group"></i> Combos</h2>
+        <button class="btn btn-primary" onclick="showCreateCombo()">
+          <i class="fas fa-plus"></i> Create Combo
+        </button>
+      </div>
+      <div id="combosList" class="items-grid"></div>
+    </section>
+
+    <!-- New Arrivals -->
+    <section id="new-arrivals" class="panel">
+      <div class="panel-header">
+        <h2><i class="fas fa-star"></i> New Arrivals</h2>
+        <button class="btn btn-primary" onclick="showAddNewArrival()">
+          <i class="fas fa-plus"></i> Add to New Arrivals
+        </button>
+      </div>
+      <div id="newArrivalsList" class="items-grid"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="settings" class="panel">
+      <div class="panel-header">
+        <h2><i class="fas fa-cog"></i> Settings</h2>
+      </div>
+      <div class="settings-card">
+        <p>Manage admin account or other settings from the API directly.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal Container -->
+  <div id="modalContainer" class="modal-container">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Modal Title</h3>
+        <button class="modal-close" onclick="closeModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Dynamic content -->
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/admin_app.js"></script>
+</body>
+</html>
