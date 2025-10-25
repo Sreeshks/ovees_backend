@@ -220,17 +220,30 @@ async function deleteCategory(id) {
 }
 
 // Products
-async function loadProducts() {
+// Load products with server-side pagination (admin endpoint)
+let currentSortBy = '';
+let currentPageSize = 12;
+let currentSearch = '';
+
+async function loadProducts(page = 1, pageSize = null) {
   try {
-    const res = await api('/products?page=1&page_size=50');
+    const ps = pageSize || currentPageSize;
+    const sortParam = currentSortBy ? `&sort_by=${encodeURIComponent(currentSortBy)}` : '';
+    const searchParam = currentSearch ? `&search=${encodeURIComponent(currentSearch)}` : '';
+    const res = await api(`/admin/products?page=${page}&page_size=${ps}${sortParam}${searchParam}`);
     const grid = document.getElementById('productsList');
+    const paginationContainer = document.getElementById('productsPagination');
     grid.innerHTML = '';
+    paginationContainer.innerHTML = '';
+
     res.items.forEach(p => {
       const card = document.createElement('div');
       card.className = 'item-card';
       const img = p.images && p.images[0] ? p.images[0] : 'https://via.placeholder.com/400x300?text=No+Image';
       card.innerHTML = `
-        <img src="${img}" alt="${escapeHtml(p.name)}" class="item-image" onerror="this.src='https://via.placeholder.com/400x300?text=No+Image'">
+        <a href="/admin/product/${p.product_code}/edit" style="text-decoration:none;color:inherit">
+          <img src="${img}" alt="${escapeHtml(p.name)}" class="item-image" onerror="this.src='https://via.placeholder.com/400x300?text=No+Image'">
+        </a>
         <div class="item-content">
           <h3 class="item-title">${escapeHtml(p.name)}</h3>
           <div class="item-meta">
@@ -240,20 +253,155 @@ async function loadProducts() {
             ${p.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}
           </div>
           <div class="item-actions">
-            <button class="btn btn-primary" onclick="editProduct('${p.product_code}')">
-              <i class="fas fa-edit"></i> Edit
-            </button>
-            <button class="btn btn-danger" onclick="deleteProduct('${p.product_code}')">
-              <i class="fas fa-trash"></i> Delete
-            </button>
+            <a class="btn btn-primary" href="/admin/product/${p.product_code}/edit">
+              <i class="fas fa-eye"></i> View
+            </a>
           </div>
         </div>
       `;
       grid.appendChild(card);
     });
+
+  // Render pagination
+    const meta = res.meta;
+    function renderPagination(meta) {
+      const frag = document.createDocumentFragment();
+      const prev = document.createElement('button');
+      prev.className = 'pagination-button';
+      prev.textContent = 'Prev';
+      prev.disabled = !meta.has_previous;
+  prev.addEventListener('click', () => loadProducts(meta.page - 1));
+      frag.appendChild(prev);
+
+      // show up to 7 page numbers centered on current
+      const total = meta.total_pages;
+      const current = meta.page;
+      const range = [];
+      const delta = 3;
+      const left = Math.max(1, current - delta);
+      const right = Math.min(total, current + delta);
+      for (let i = left; i <= right; i++) range.push(i);
+
+      if (left > 1) {
+        const b = document.createElement('button');
+        b.className = 'pagination-button';
+        b.textContent = '1';
+  b.addEventListener('click', () => loadProducts(1));
+        frag.appendChild(b);
+        if (left > 2) {
+          const dots = document.createElement('span');
+          dots.textContent = '...';
+          dots.style.padding = '8px';
+          frag.appendChild(dots);
+        }
+      }
+
+      range.forEach(pn => {
+        const btn = document.createElement('button');
+        btn.className = 'pagination-button' + (pn === current ? ' active' : '');
+        btn.textContent = pn;
+  btn.addEventListener('click', () => loadProducts(pn));
+        frag.appendChild(btn);
+      });
+
+      if (right < total) {
+        if (right < total - 1) {
+          const dots = document.createElement('span');
+          dots.textContent = '...';
+          dots.style.padding = '8px';
+          frag.appendChild(dots);
+        }
+        const b = document.createElement('button');
+        b.className = 'pagination-button';
+        b.textContent = total;
+  b.addEventListener('click', () => loadProducts(total));
+        frag.appendChild(b);
+      }
+
+      const next = document.createElement('button');
+      next.className = 'pagination-button';
+      next.textContent = 'Next';
+      next.disabled = !meta.has_next;
+  next.addEventListener('click', () => loadProducts(meta.page + 1));
+      frag.appendChild(next);
+
+      paginationContainer.appendChild(frag);
+    }
+
+    renderPagination(meta);
+    // setup gallery click handlers for thumbnails in the grid (lightbox)
+    document.querySelectorAll('#productsList .item-card img').forEach(img => {
+      img.addEventListener('click', (e) => {
+        // open in new tab for quick preview on grid click (detail page is primary edit)
+        const src = e.currentTarget.getAttribute('src');
+        if (src) window.open(src, '_blank');
+      });
+    });
   } catch (e) {
     console.error(e);
+    document.getElementById('productsList').innerHTML = '<div class="muted">Failed to load products</div>';
   }
+}
+
+// Called on page load to wire the page-size and sort controls
+function setupProductsControls() {
+  const pageSizeSelect = document.getElementById('pageSizeSelect');
+  const sortBySelect = document.getElementById('sortBySelect');
+  if (pageSizeSelect) {
+    pageSizeSelect.value = String(currentPageSize);
+    pageSizeSelect.addEventListener('change', () => {
+      currentPageSize = parseInt(pageSizeSelect.value, 10) || 12;
+      loadProducts(1);
+    });
+  }
+  if (sortBySelect) {
+    sortBySelect.addEventListener('change', () => {
+      currentSortBy = sortBySelect.value || '';
+      loadProducts(1);
+    });
+  }
+}
+
+// Enable lightbox preview and drag-to-reorder for an image-preview-container
+function enableImageGallery(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Lightbox overlay
+  let overlay = document.getElementById('imageLightboxOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'imageLightboxOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px;';
+    overlay.innerHTML = '<img id="imageLightboxImg" style="max-width:90%;max-height:90%;border-radius:8px;box-shadow:var(--shadow-xl);" />';
+    overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+    document.body.appendChild(overlay);
+  }
+
+  function showLightbox(src) {
+    const img = document.getElementById('imageLightboxImg');
+    img.src = src;
+    overlay.style.display = 'flex';
+  }
+
+  // Drag and drop reordering
+  let dragSrc = null;
+  container.querySelectorAll('.image-preview').forEach(item => {
+    item.setAttribute('draggable', 'true');
+    item.addEventListener('dragstart', (e) => { dragSrc = item; item.style.opacity = '0.4'; });
+    item.addEventListener('dragend', () => { dragSrc = null; item.style.opacity = '1'; });
+    item.addEventListener('dragover', (e) => { e.preventDefault(); });
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (dragSrc && dragSrc !== item) {
+        container.insertBefore(dragSrc, item.nextSibling);
+      }
+    });
+
+    // click to open lightbox
+    const img = item.querySelector('img');
+    if (img) img.addEventListener('click', (e) => { e.stopPropagation(); showLightbox(img.src); });
+  });
 }
 
 async function showCreateProduct() {
@@ -1005,14 +1153,22 @@ function showNotification(message, type = 'info') {
   }, 3000);
 }
 
-// Product Search
-document.getElementById('productSearch')?.addEventListener('input', (e) => {
-  const query = e.target.value.toLowerCase();
-  document.querySelectorAll('#productsList .item-card').forEach(card => {
-    const text = card.textContent.toLowerCase();
-    card.style.display = text.includes(query) ? 'block' : 'none';
-  });
-});
+// Product Search (server-side) with debounce
+function debounce(fn, wait) {
+  let t = null;
+  return function(...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), wait);
+  };
+}
+
+const productSearchInput = document.getElementById('productSearch');
+if (productSearchInput) {
+  productSearchInput.addEventListener('input', debounce((e) => {
+    currentSearch = e.target.value.trim();
+    loadProducts(1);
+  }, 400));
+}
 
 // Initialize on load
 window.addEventListener('load', () => {
@@ -1024,6 +1180,7 @@ window.addEventListener('load', () => {
   // Load all data
   loadStats();
   loadCategories();
+  setupProductsControls();
   loadProducts();
   loadBanners();
   loadCombos();
@@ -1089,20 +1246,8 @@ async function loadCategories(){
   }catch(e){console.error(e)}
 }
 
-async function loadProducts(){
-  try{
-    const res = await api('/products?page=1&page_size=50');
-    const list = document.getElementById('productsList');
-    list.innerHTML = '';
-    res.items.forEach(p=>{
-      const div = document.createElement('div'); div.className='item';
-      const img = p.images && p.images[0] ? `<img src='${p.images[0]}' />` : `<img src='/static/js/placeholder.png' />`;
-      div.innerHTML = img + `<div class='meta'><strong>${p.name}</strong><div class='muted'>Code: ${p.product_code} • ₹${p.normal_price}${p.offer_price?(' • Offer ₹'+p.offer_price):''}</div></div>`+
-        `<div class='actions'><button class='btn' data-code='${p.product_code}'>Edit</button><button class='btn' data-code='${p.product_code}'>Delete</button></div>`;
-      list.appendChild(div);
-    });
-  }catch(e){console.error(e)}
-}
+// NOTE: older loadProducts removed to avoid duplication; the paginated admin
+// loadProducts(page, pageSize) implementation is defined earlier in this file.
 
 async function loadBanners(){
   try{
@@ -1182,6 +1327,7 @@ window.addEventListener('load', ()=>{
     return;
   }
   loadStats(); loadCategories(); loadProducts(); loadBanners(); loadCombos(); loadNewArrivals();
+  setupProductsControls();
   // show admin username placeholder
   document.getElementById('adminUser').innerText = 'Admin';
 });

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Product Details - Ovees Admin</title>
+  <link rel="stylesheet" href="/static/css/admin.css?v=2">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="backToList" class="menu-toggle">
+      <i class="fas fa-arrow-left"></i>
+    </button>
+    <div class="topbar-title">
+      <i class="fas fa-box"></i>
+      Product Details
+    </div>
+    <div class="topbar-actions">
+      <span class="user-badge" id="adminUser">
+        <i class="fas fa-user-shield"></i>
+        <span>Admin</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="content" style="margin-left:0;padding-top:90px;max-width:900px;">
+    <section class="panel active">
+      <div class="panel-header">
+        <h2><i class="fas fa-box"></i> <span id="productName">Loading...</span></h2>
+        <div>
+          <button id="deleteProductBtn" class="btn btn-danger" style="display:none"><i class="fas fa-trash"></i> Delete</button>
+          <a href="/admin/dashboard#products" class="btn">Back to list</a>
+        </div>
+      </div>
+
+      <div id="productDetailContainer">
+        <!-- Product form will be injected here by JS -->
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/admin_app.js?v=2"></script>
+  <script>
+    (function(){
+      const code = "{{ product_code }}";
+      document.getElementById('backToList').addEventListener('click', () => {
+        window.location.href = '/admin/dashboard#products';
+      });
+
+      async function loadProduct() {
+        try {
+          const product = await api(`/admin/products/${code}`);
+          document.getElementById('productName').innerText = product.name;
+
+          const container = document.getElementById('productDetailContainer');
+          const existingImages = product.images || [];
+          const imagePreviewHtml = existingImages.map((url, idx) => `
+            <div class="image-preview" data-existing-url="${url}">
+              <img src="${url}" alt="Image ${idx + 1}">
+              <button type="button" class="image-preview-remove" onclick="removeExistingImage(this)">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          `).join('');
+
+          container.innerHTML = `
+            <form id="productDetailForm">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Product Code</label>
+                  <input type="text" name="product_code" value="${product.product_code}" disabled>
+                </div>
+                <div class="form-group">
+                  <label>Product Name *</label>
+                  <input type="text" name="name" value="${escapeHtml(product.name)}" required>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Category</label>
+                  <select name="category_id" id="categorySelect"></select>
+                </div>
+                <div class="form-group">
+                  <label>Normal Price *</label>
+                  <input type="number" name="normal_price" value="${product.normal_price}" step="0.01" required>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Offer Price</label>
+                  <input type="number" name="offer_price" value="${product.offer_price || ''}" step="0.01">
+                </div>
+                <div class="form-group">
+                  <label>Stock Quantity</label>
+                  <input type="number" name="stock_quantity" value="${product.stock_quantity || 0}" min="0">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Status</label>
+                <select name="is_active">
+                  <option value="true" ${product.is_active ? 'selected' : ''}>Active</option>
+                  <option value="false" ${!product.is_active ? 'selected' : ''}>Inactive</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Description</label>
+                <textarea name="details">${escapeHtml(product.details || '')}</textarea>
+              </div>
+
+              <div class="form-group">
+                <label>Current Images</label>
+                <div id="existingImagesContainer" class="image-preview-container">${imagePreviewHtml}</div>
+              </div>
+
+              <div class="form-group">
+                <label>Add Images</label>
+                <input type="file" id="newImages" name="images" accept="image/*" multiple onchange="previewImages(event, 'newImagePreview')">
+                <div id="newImagePreview" class="image-preview-container"></div>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" class="btn" id="cancelBtn">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+              </div>
+            </form>
+          `;
+
+          // Load categories into select
+          const categories = await api('/categories');
+          const select = document.getElementById('categorySelect');
+          select.innerHTML = '<option value="">Select category</option>' + categories.map(c => `\n            <option value="${c.id}" ${product.category_id === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+
+          // Wire form submission
+          document.getElementById('productDetailForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData();
+            formData.append('name', form.name.value);
+            formData.append('category_id', form.category_id.value);
+            formData.append('normal_price', form.normal_price.value);
+            formData.append('stock_quantity', form.stock_quantity.value || '0');
+            formData.append('is_active', form.is_active.value);
+            if (form.offer_price.value) formData.append('offer_price', form.offer_price.value);
+            if (form.details.value) formData.append('details', form.details.value);
+
+            // existing images
+            const existing = [];
+            document.querySelectorAll('#existingImagesContainer .image-preview').forEach(pre => {
+              const url = pre.getAttribute('data-existing-url');
+              if (url) existing.push(url);
+            });
+            if (existing.length > 0) formData.append('image_urls', JSON.stringify(existing));
+
+            // new files
+            const newFiles = document.getElementById('newImages').files;
+            if (newFiles && newFiles.length > 0) {
+              for (const f of newFiles) formData.append('images', f);
+              formData.append('replace_images', 'false');
+            } else if (existing.length > 0) {
+              formData.append('replace_images', 'true');
+            }
+
+            try {
+              const res = await fetch(`/admin/products/${code}`, {
+                method: 'PUT',
+                headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('ovees_admin_token') || '') },
+                body: formData
+              });
+              if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to update');
+              }
+              alert('Product updated');
+              window.location.href = '/admin/dashboard#products';
+            } catch (err) {
+              alert(err.message || 'Failed to update product');
+            }
+          });
+
+          // Wire cancel
+          document.getElementById('cancelBtn').addEventListener('click', () => {
+            window.location.href = '/admin/dashboard#products';
+          });
+
+          // Wire delete button
+          document.getElementById('deleteProductBtn').style.display = 'inline-flex';
+          document.getElementById('deleteProductBtn').addEventListener('click', async () => {
+            if (!confirm('Delete this product?')) return;
+            try {
+              const res = await fetch(`/admin/products/${code}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('ovees_admin_token') || '') } });
+              if (!res.ok && res.status !== 204) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Failed to delete');
+              }
+              alert('Deleted');
+              window.location.href = '/admin/dashboard#products';
+            } catch (err) {
+              alert(err.message || 'Failed to delete product');
+            }
+          });
+
+          // enable image gallery (lightbox + drag-reorder) for existing images
+          if (window.enableImageGallery) enableImageGallery('existingImagesContainer');
+
+          // when new images are selected, enable gallery on the preview container
+          document.getElementById('newImages').addEventListener('change', () => {
+            setTimeout(() => { if (window.enableImageGallery) enableImageGallery('newImagePreview'); }, 60);
+          });
+
+        } catch (e) {
+          document.getElementById('productDetailContainer').innerHTML = '<div class="muted">Failed to load product</div>';
+        }
+      }
+
+      // Expose removeExistingImage to global for the inline handlers
+      window.removeExistingImage = function(btn) {
+        const card = btn.closest('.image-preview');
+        if (card) card.remove();
+      };
+
+      // reuse previewImages from admin_app.js (already loaded)
+      loadProduct();
+    })();
+  </script>
+</body>
+</html>

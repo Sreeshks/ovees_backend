@@ -16,6 +16,9 @@ from schemas import (
     AdminLogin, Token, AdminCreate,
     BannerCreate, BannerUpdate, BannerResponse
 )
+from schemas import PaginatedResponse
+from utils.pagination import paginate_query
+from sqlalchemy import desc, asc
 from utils.auth import (
     verify_password, get_password_hash, create_access_token, 
     get_current_admin, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -43,6 +46,91 @@ def admin_login_page(request: Request):
 def admin_dashboard_page(request: Request):
     """Serve admin dashboard UI. Client-side JS handles auth and API calls."""
     return templates.TemplateResponse("admin/index.html", {"request": request})
+
+
+@router.get("/product/{product_code}/edit", response_class=HTMLResponse)
+def admin_product_page(request: Request, product_code: str):
+    """Serve the product detail/edit page for admin.
+
+    This route intentionally does not require server-side authentication so that a
+    normal browser navigation to the edit page succeeds (the client-side JavaScript
+    reads the token from localStorage and adds the Authorization header to subsequent
+    API calls). Keeping the API endpoints protected prevents unauthorized API access.
+    """
+    return templates.TemplateResponse("admin/product_detail.html", {"request": request, "product_code": product_code})
+
+
+# ==================== ADMIN PRODUCTS (paginated + detail for admin) ====================
+@router.get("/products", response_model=PaginatedResponse[ProductResponse])
+def admin_get_products(
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    category_id: Optional[int] = None,
+    search: Optional[str] = None,
+    is_active: Optional[bool] = None,  # if None => return all
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """Admin view to get products with pagination. If `is_active` is None, returns both active and inactive."""
+    query = db.query(Product)
+
+    if category_id:
+        query = query.filter(Product.category_id == category_id)
+
+    if min_price is not None:
+        from sqlalchemy import or_, and_, case
+        query = query.filter(
+            or_(
+                and_(Product.offer_price.isnot(None), Product.offer_price >= min_price),
+                and_(Product.offer_price.is_(None), Product.normal_price >= min_price)
+            )
+        )
+
+    if max_price is not None:
+        from sqlalchemy import or_, and_
+        query = query.filter(
+            or_(
+                and_(Product.offer_price.isnot(None), Product.offer_price <= max_price),
+                and_(Product.offer_price.is_(None), Product.normal_price <= max_price)
+            )
+        )
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter((Product.name.ilike(search_term)) | (Product.details.ilike(search_term)))
+
+    if sort_by == "price_low":
+        from sqlalchemy import case
+        effective_price = case((Product.offer_price.isnot(None), Product.offer_price), else_=Product.normal_price)
+        query = query.order_by(asc(effective_price))
+    elif sort_by == "price_high":
+        from sqlalchemy import case
+        effective_price = case((Product.offer_price.isnot(None), Product.offer_price), else_=Product.normal_price)
+        query = query.order_by(desc(effective_price))
+    elif sort_by == "newest":
+        query = query.order_by(desc(Product.created_at))
+    elif sort_by == "oldest":
+        query = query.order_by(asc(Product.created_at))
+    else:
+        query = query.order_by(desc(Product.created_at))
+
+    if is_active is not None:
+        query = query.filter(Product.is_active == is_active)
+
+    items, meta = paginate_query(query, page, page_size)
+    return PaginatedResponse(items=items, meta=meta)
+
+
+@router.get("/products/{product_code}", response_model=ProductResponse)
+def admin_get_product(product_code: str, db: Session = Depends(get_db), current_admin: Admin = Depends(get_current_admin)):
+    """Get a single product by product code (admin)."""
+    product = db.query(Product).filter(Product.product_code == product_code).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
 
 
 # ==================== AUTHENTICATION ====================

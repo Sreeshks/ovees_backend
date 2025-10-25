@@ -451,6 +451,8 @@ h1, h2, h3, h4, h5, h6 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  /* Add the non-prefixed property for broader compatibility where supported */
+  line-clamp: 2;
 }
 
 .item-meta {
@@ -961,4 +963,64 @@ h1, h2, h3, h4, h5, h6 {
 .badge-primary {
   background: rgba(184, 50, 108, 0.1);
   color: var(--primary);
+}
+
+/* Defensive image rules: ensure images inside lists, previews and banners
+   never overflow the viewport and behave as thumbnails. This covers cases
+   where images are rendered without the expected helper class. */
+.items-grid img,
+.items-grid .item-image,
+.image-preview img,
+#bannersList img,
+#productsList img {
+  max-width: 100%;
+  display: block;
+  height: auto;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+/* Ensure modal images scale down to fit dialog */
+.modal-body img,
+.modal-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Pagination controls */
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pagination-button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.pagination-button:hover {
+  transform: translateY(-2px);
+}
+
+.pagination-button.active {
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+}
+
+/* Strong override to ensure thumbnails never expand due to other styles */
+.items-grid > .item-card img.item-image,
+.items-grid img {
+  width: 100% !important;
+  height: 220px !important;
+  max-height: 220px !important;
+  object-fit: cover !important;
+  display: block !important;
 }
