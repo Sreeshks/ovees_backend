@@ -975,19 +975,20 @@ async function loadCombos() {
     res.items.forEach(c => {
       const card = document.createElement('div');
       card.className = 'item-card';
+      const priceDisplay = (c.combo_price !== undefined && c.combo_price !== null) ? `₹${c.combo_price}` : '—';
       card.innerHTML = `
         <div class="item-content">
-          <h3 class="item-title"><i class="fas fa-layer-group"></i> ${escapeHtml(c.name)}</h3>
+          <h3 class="item-title"><i class="fas fa-layer-group"></i> ${escapeHtml(c.name || '')}</h3>
           <div class="item-meta">
-            <span><i class="fas fa-barcode"></i> ${c.combo_code}</span>
-            <span><i class="fas fa-rupee-sign"></i> ${c.price}</span>
+            <span><i class="fas fa-barcode"></i> ${escapeHtml(c.combo_code || '')}</span>
+            <span><i class="fas fa-rupee-sign"></i> ${priceDisplay}</span>
             ${c.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}
           </div>
           <div class="item-actions">
-            <button class="btn btn-primary" onclick="editCombo('${c.combo_code}')">
+            <button class="btn btn-primary" onclick="editCombo('${escapeHtml(c.combo_code || '')}')">
               <i class="fas fa-edit"></i> Edit
             </button>
-            <button class="btn btn-danger" onclick="deleteCombo('${c.combo_code}')">
+            <button class="btn btn-danger" onclick="deleteCombo('${escapeHtml(c.combo_code || '')}')">
               <i class="fas fa-trash"></i> Delete
             </button>
           </div>
@@ -1014,10 +1015,10 @@ function showCreateCombo() {
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label><i class="fas fa-rupee-sign"></i> Price *</label>
-          <input type="number" name="price" required step="0.01">
-        </div>
+            <div class="form-group">
+              <label><i class="fas fa-rupee-sign"></i> Price *</label>
+              <input type="number" name="combo_price" required step="0.01">
+            </div>
         <div class="form-group">
           <label><i class="fas fa-toggle-on"></i> Status</label>
           <select name="is_active">
@@ -1048,20 +1049,26 @@ function showCreateCombo() {
 async function submitCombo(e) {
   e.preventDefault();
   const form = e.target;
-  const data = {
-    name: form.name.value,
-    combo_code: form.combo_code.value,
-    price: parseFloat(form.price.value),
-    description: form.description.value,
-    is_active: form.is_active.value === 'true',
-    product_ids: form.product_ids.value ? form.product_ids.value.split(',').map(s => parseInt(s.trim())) : []
-  };
-  try {
-    await fetch('/admin/combos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
-      body: JSON.stringify(data)
-    });
+    const productIds = form.product_ids.value ? form.product_ids.value.split(',').map(s => parseInt(s.trim())).filter(Boolean) : [];
+    const productsPayload = productIds.map(id => ({ product_id: id, quantity: 1 }));
+    const data = {
+      name: form.name.value,
+      combo_code: form.combo_code.value,
+      combo_price: parseFloat(form.combo_price.value),
+      description: form.description.value,
+      is_active: form.is_active.value === 'true',
+      products: productsPayload
+    };
+    try {
+      const res = await fetch('/admin/combos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({ detail: 'Failed to create combo' }));
+        throw new Error(err.detail || 'Failed to create combo');
+      }
     closeModal();
     loadCombos();
     showNotification('Combo created successfully!', 'success');
@@ -1072,15 +1079,46 @@ async function submitCombo(e) {
 
 async function editCombo(code) {
   try {
-    // Load combos and find the one to edit (no single-get API currently)
-    const res = await api('/combos?page=1&page_size=200');
-    const combo = res.items.find(x => x.combo_code === code);
-    if (!combo) throw new Error('Combo not found');
+    let combo = null;
 
-    const productIds = (combo.products || []).map(p => p.product_id).join(', ');
+    // Prefer fetching a single combo if the API exposes it
+    try {
+      combo = await api(`/combos/${encodeURIComponent(code)}`);
+    } catch (err) {
+      // Fallback to paginated list search if single-get isn't available or fails
+      try {
+        const res = await api('/combos?page=1&page_size=200');
+        if (res && Array.isArray(res.items)) combo = res.items.find(x => x.combo_code === code) || null;
+      } catch (err2) {
+        combo = null;
+      }
+    }
 
+    // If combo still not present, provide an empty object so modal renders
+    if (!combo) {
+      combo = {
+        name: null,
+        combo_code: code,
+        combo_price: null,
+        is_active: false,
+        description: null,
+        products: []
+      };
+    }
+
+    // Normalize product IDs: backend may return either {product_id,...} or {product: {...}, quantity}
+    const productIds = (combo.products || []).map(p => {
+      if (p.product_id) return String(p.product_id);
+      if (p.product && (p.product.id || p.product.product_id)) return String(p.product.id || p.product.product_id);
+      if (p.product && p.product.product_code) return String(p.product.product_code);
+      // If the product field is a number (rare), return it
+      if (typeof p === 'number') return String(p);
+      return null;
+    }).filter(Boolean).join(', ');
+
+    const comboPriceVal = combo.combo_price !== undefined && combo.combo_price !== null ? combo.combo_price : (combo.price !== undefined ? combo.price : '');
     const content = `
-      <form id="comboForm" onsubmit="updateCombo(event, '${code}')">
+      <form id="comboForm" onsubmit="updateCombo(event, '${escapeHtml(code)}')">
         <div class="form-row">
           <div class="form-group">
             <label><i class="fas fa-layer-group"></i> Combo Name *</label>
@@ -1088,13 +1126,13 @@ async function editCombo(code) {
           </div>
           <div class="form-group">
             <label><i class="fas fa-barcode"></i> Combo Code</label>
-            <input type="text" name="combo_code" value="${escapeHtml(combo.combo_code)}" disabled>
+            <input type="text" name="combo_code" value="${escapeHtml(combo.combo_code || '')}" disabled>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label><i class="fas fa-rupee-sign"></i> Price *</label>
-            <input type="number" name="price" required step="0.01" value="${combo.price}">
+            <input type="number" name="combo_price" required step="0.01" value="${escapeHtml(String(comboPriceVal))}">
           </div>
           <div class="form-group">
             <label><i class="fas fa-toggle-on"></i> Status</label>
@@ -1130,12 +1168,14 @@ async function editCombo(code) {
 async function updateCombo(e, code) {
   e.preventDefault();
   const form = e.target;
+  const productIds = form.product_ids.value ? form.product_ids.value.split(',').map(s => parseInt(s.trim())).filter(Boolean) : [];
+  const productsPayload = productIds.map(id => ({ product_id: id, quantity: 1 }));
   const data = {
     name: form.name.value,
-    price: parseFloat(form.price.value),
+    combo_price: parseFloat(form.combo_price.value),
     description: form.description.value,
     is_active: form.is_active.value === 'true',
-    product_ids: form.product_ids.value ? form.product_ids.value.split(',').map(s => parseInt(s.trim())) : []
+    products: productsPayload
   };
   try {
     const res = await fetch(`/admin/combos/${code}`, {
