@@ -24,6 +24,12 @@ document.querySelectorAll('.nav-item').forEach(a => {
     
     // Close mobile menu
     closeMobileMenu();
+    // Refresh content for the activated section so UI shows latest data
+    if (section === 'categories') loadCategories();
+    else if (section === 'products') loadProducts();
+    else if (section === 'banners') loadBanners();
+    else if (section === 'combos') loadCombos();
+    else if (section === 'new-arrivals') loadNewArrivals();
   });
 });
 
@@ -98,26 +104,54 @@ async function loadCategories() {
     const categories = await api('/categories');
     const grid = document.getElementById('categoriesList');
     grid.innerHTML = '';
+
     categories.forEach(c => {
       const card = document.createElement('div');
       card.className = 'item-card';
-      card.innerHTML = `
-        <div class="item-content">
-          <h3 class="item-title"><i class="fas fa-tag"></i> ${c.name}</h3>
-          <div class="item-meta">
-            ${c.description ? `<span>${c.description}</span>` : ''}
-            <span class="muted small">ID: ${c.id}</span>
-          </div>
-          <div class="item-actions">
-            <button class="btn btn-primary" onclick="editCategory(${c.id}, '${escapeHtml(c.name)}', '${escapeHtml(c.description || '')}')">
-              <i class="fas fa-edit"></i> Edit
-            </button>
-            <button class="btn btn-danger" onclick="deleteCategory(${c.id})">
-              <i class="fas fa-trash"></i> Delete
-            </button>
-          </div>
-        </div>
-      `;
+
+      const content = document.createElement('div');
+      content.className = 'item-content';
+
+      const title = document.createElement('h3');
+      title.className = 'item-title';
+      const icon = document.createElement('i'); icon.className = 'fas fa-tag';
+      title.appendChild(icon);
+      const textNode = document.createTextNode(' ' + (c.name || 'Untitled'));
+      title.appendChild(textNode);
+
+      const meta = document.createElement('div');
+      meta.className = 'item-meta';
+      if (c.description) {
+        const desc = document.createElement('span');
+        desc.textContent = c.description;
+        meta.appendChild(desc);
+      }
+      const idSpan = document.createElement('span');
+      idSpan.className = 'muted small';
+      idSpan.textContent = 'ID: ' + c.id;
+      meta.appendChild(idSpan);
+
+      const actions = document.createElement('div');
+      actions.className = 'item-actions';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-primary';
+      editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit';
+      editBtn.addEventListener('click', () => editCategory(c.id, c.name || '', c.description || ''));
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger';
+      delBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+      delBtn.addEventListener('click', () => deleteCategory(c.id));
+
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+
+      content.appendChild(title);
+      content.appendChild(meta);
+      content.appendChild(actions);
+
+      card.appendChild(content);
       grid.appendChild(card);
     });
   } catch (e) {
@@ -148,25 +182,32 @@ function showCreateCategory() {
 }
 
 function editCategory(id, name, description) {
-  const content = `
-    <form id="categoryForm" onsubmit="updateCategory(event, ${id})">
-      <div class="form-group">
-        <label><i class="fas fa-tag"></i> Category Name *</label>
-        <input type="text" name="name" value="${name}" required>
-      </div>
-      <div class="form-group">
-        <label><i class="fas fa-align-left"></i> Description</label>
-        <textarea name="description">${description}</textarea>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn btn-primary">
-          <i class="fas fa-save"></i> Update Category
-        </button>
-      </div>
-    </form>
-  `;
-  showModal('<i class="fas fa-edit"></i> Edit Category', content);
+  // Build form elements to avoid string interpolation issues with quotes
+  const form = document.createElement('form');
+  form.id = 'categoryForm';
+  form.addEventListener('submit', (e) => updateCategory(e, id));
+
+  const fg1 = document.createElement('div'); fg1.className = 'form-group';
+  const label1 = document.createElement('label'); label1.innerHTML = '<i class="fas fa-tag"></i> Category Name *';
+  const input = document.createElement('input'); input.type = 'text'; input.name = 'name'; input.required = true; input.value = name;
+  fg1.appendChild(label1); fg1.appendChild(input);
+
+  const fg2 = document.createElement('div'); fg2.className = 'form-group';
+  const label2 = document.createElement('label'); label2.innerHTML = '<i class="fas fa-align-left"></i> Description';
+  const textarea = document.createElement('textarea'); textarea.name = 'description'; textarea.textContent = description || '';
+  fg2.appendChild(label2); fg2.appendChild(textarea);
+
+  const actions = document.createElement('div'); actions.className = 'form-actions';
+  const cancelBtn = document.createElement('button'); cancelBtn.type = 'button'; cancelBtn.className = 'btn'; cancelBtn.textContent = 'Cancel'; cancelBtn.addEventListener('click', closeModal);
+  const saveBtn = document.createElement('button'); saveBtn.type = 'submit'; saveBtn.className = 'btn btn-primary'; saveBtn.innerHTML = '<i class="fas fa-save"></i> Update Category';
+  actions.appendChild(cancelBtn); actions.appendChild(saveBtn);
+
+  form.appendChild(fg1); form.appendChild(fg2); form.appendChild(actions);
+
+  showModal('<i class="fas fa-edit"></i> Edit Category', '');
+  const modalBody = document.getElementById('modalBody');
+  modalBody.innerHTML = ''; // ensure empty
+  modalBody.appendChild(form);
 }
 
 async function submitCategory(e) {
@@ -174,16 +215,27 @@ async function submitCategory(e) {
   const form = e.target;
   const data = { name: form.name.value, description: form.description.value };
   try {
-    await fetch('/admin/categories', {
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; const prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...'; }
+
+    const res = await fetch('/admin/categories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
       body: JSON.stringify(data)
     });
+
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({ detail: 'Failed to create category' }));
+      throw new Error(err.detail || 'Failed to create category');
+    }
+
     closeModal();
     loadCategories();
     showNotification('Category created successfully!', 'success');
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   } catch (e) {
-    showNotification('Failed to create category', 'error');
+    showNotification(e.message || 'Failed to create category', 'error');
+    // keep modal open so user can correct
   }
 }
 
@@ -192,30 +244,46 @@ async function updateCategory(e, id) {
   const form = e.target;
   const data = { name: form.name.value, description: form.description.value };
   try {
-    await fetch(`/admin/categories/${id}`, {
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; const prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+
+    const res = await fetch(`/admin/categories/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
       body: JSON.stringify(data)
     });
+
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({ detail: 'Failed to update category' }));
+      throw new Error(err.detail || 'Failed to update category');
+    }
+
     closeModal();
     loadCategories();
     showNotification('Category updated successfully!', 'success');
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   } catch (e) {
-    showNotification('Failed to update category', 'error');
+    showNotification(e.message || 'Failed to update category', 'error');
   }
 }
 
 async function deleteCategory(id) {
   if (!confirm('Are you sure you want to delete this category?')) return;
   try {
-    await fetch(`/admin/categories/${id}`, {
+    const res = await fetch(`/admin/categories/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': 'Bearer ' + token() }
     });
+
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({ detail: 'Failed to delete category' }));
+      throw new Error(err.detail || 'Failed to delete category');
+    }
+
     loadCategories();
     showNotification('Category deleted successfully!', 'success');
   } catch (e) {
-    showNotification('Failed to delete category', 'error');
+    showNotification(e.message || 'Failed to delete category', 'error');
   }
 }
 
@@ -224,13 +292,15 @@ async function deleteCategory(id) {
 let currentSortBy = '';
 let currentPageSize = 12;
 let currentSearch = '';
+let currentCategoryId = '';
 
 async function loadProducts(page = 1, pageSize = null) {
   try {
     const ps = pageSize || currentPageSize;
-    const sortParam = currentSortBy ? `&sort_by=${encodeURIComponent(currentSortBy)}` : '';
-    const searchParam = currentSearch ? `&search=${encodeURIComponent(currentSearch)}` : '';
-    const res = await api(`/admin/products?page=${page}&page_size=${ps}${sortParam}${searchParam}`);
+  const sortParam = currentSortBy ? `&sort_by=${encodeURIComponent(currentSortBy)}` : '';
+  const searchParam = currentSearch ? `&search=${encodeURIComponent(currentSearch)}` : '';
+  const categoryParam = currentCategoryId ? `&category_id=${encodeURIComponent(currentCategoryId)}` : '';
+  const res = await api(`/admin/products?page=${page}&page_size=${ps}${sortParam}${searchParam}${categoryParam}`);
     const grid = document.getElementById('productsList');
     const paginationContainer = document.getElementById('productsPagination');
     grid.innerHTML = '';
@@ -344,9 +414,10 @@ async function loadProducts(page = 1, pageSize = null) {
 }
 
 // Called on page load to wire the page-size and sort controls
-function setupProductsControls() {
+async function setupProductsControls() {
   const pageSizeSelect = document.getElementById('pageSizeSelect');
   const sortBySelect = document.getElementById('sortBySelect');
+  const categorySelect = document.getElementById('categoryFilterSelect');
   if (pageSizeSelect) {
     pageSizeSelect.value = String(currentPageSize);
     pageSizeSelect.addEventListener('change', () => {
@@ -359,6 +430,26 @@ function setupProductsControls() {
       currentSortBy = sortBySelect.value || '';
       loadProducts(1);
     });
+  }
+  if (categorySelect) {
+    // populate categories for filter
+    categorySelect.innerHTML = '<option value="">All Categories</option>';
+    try {
+      const cats = await api('/categories');
+      cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        categorySelect.appendChild(opt);
+      });
+      categorySelect.value = currentCategoryId || '';
+      categorySelect.addEventListener('change', () => {
+        currentCategoryId = categorySelect.value || '';
+        loadProducts(1);
+      });
+    } catch (e) {
+      console.error('Failed to load category filter', e);
+    }
   }
 }
 
@@ -979,6 +1070,91 @@ async function submitCombo(e) {
   }
 }
 
+async function editCombo(code) {
+  try {
+    // Load combos and find the one to edit (no single-get API currently)
+    const res = await api('/combos?page=1&page_size=200');
+    const combo = res.items.find(x => x.combo_code === code);
+    if (!combo) throw new Error('Combo not found');
+
+    const productIds = (combo.products || []).map(p => p.product_id).join(', ');
+
+    const content = `
+      <form id="comboForm" onsubmit="updateCombo(event, '${code}')">
+        <div class="form-row">
+          <div class="form-group">
+            <label><i class="fas fa-layer-group"></i> Combo Name *</label>
+            <input type="text" name="name" required value="${escapeHtml(combo.name || '')}">
+          </div>
+          <div class="form-group">
+            <label><i class="fas fa-barcode"></i> Combo Code</label>
+            <input type="text" name="combo_code" value="${escapeHtml(combo.combo_code)}" disabled>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><i class="fas fa-rupee-sign"></i> Price *</label>
+            <input type="number" name="price" required step="0.01" value="${combo.price}">
+          </div>
+          <div class="form-group">
+            <label><i class="fas fa-toggle-on"></i> Status</label>
+            <select name="is_active">
+              <option value="true" ${combo.is_active ? 'selected' : ''}>Active</option>
+              <option value="false" ${!combo.is_active ? 'selected' : ''}>Inactive</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label><i class="fas fa-align-left"></i> Description</label>
+          <textarea name="description">${escapeHtml(combo.description || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label><i class="fas fa-list"></i> Product IDs (comma-separated)</label>
+          <input type="text" name="product_ids" placeholder="1, 2, 3" value="${escapeHtml(productIds)}">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> Update Combo
+          </button>
+        </div>
+      </form>
+    `;
+
+    showModal('<i class="fas fa-edit"></i> Edit Combo', content);
+  } catch (e) {
+    showNotification(e.message || 'Failed to load combo', 'error');
+  }
+}
+
+async function updateCombo(e, code) {
+  e.preventDefault();
+  const form = e.target;
+  const data = {
+    name: form.name.value,
+    price: parseFloat(form.price.value),
+    description: form.description.value,
+    is_active: form.is_active.value === 'true',
+    product_ids: form.product_ids.value ? form.product_ids.value.split(',').map(s => parseInt(s.trim())) : []
+  };
+  try {
+    const res = await fetch(`/admin/combos/${code}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({ detail: 'Failed to update combo' }));
+      throw new Error(err.detail || 'Failed to update combo');
+    }
+    closeModal();
+    loadCombos();
+    showNotification('Combo updated successfully!', 'success');
+  } catch (e) {
+    showNotification(e.message || 'Failed to update combo', 'error');
+  }
+}
+
 async function deleteCombo(code) {
   if (!confirm('Are you sure you want to delete this combo?')) return;
   try {
@@ -1171,21 +1347,21 @@ if (productSearchInput) {
 }
 
 // Initialize on load
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
   if (!token()) {
     if (location.pathname !== '/admin/login') location.href = '/admin/login';
     return;
   }
-  
-  // Load all data
+
+  // Load initial data; ensure controls are set up before loading products
   loadStats();
   loadCategories();
-  setupProductsControls();
-  loadProducts();
+  await setupProductsControls();
+  await loadProducts();
   loadBanners();
   loadCombos();
   loadNewArrivals();
-  
+
   // Add CSS animation
   const style = document.createElement('style');
   style.textContent = `
@@ -1201,134 +1377,5 @@ window.addEventListener('load', () => {
   document.head.appendChild(style);
 });
 
-document.getElementById('menuToggle')?.addEventListener('click', ()=>{
-  document.getElementById('sidebar').classList.toggle('open');
-});
-
-document.getElementById('logoutBtn')?.addEventListener('click',(e)=>{
-  e.preventDefault();
-  localStorage.removeItem('ovees_admin_token');
-  window.location.href = '/admin/login';
-});
-
-// Load initial data for dashboard
-async function loadStats(){
-  try{
-    const stats = await api('/stats/products-count');
-    const container = document.getElementById('statsCards');
-    container.innerHTML = '';
-    const items = [
-      {title:'Products', value:stats.total_products},
-      {title:'99 Store', value:stats['99_store']},
-      {title:'199 Store', value:stats['199_store']},
-      {title:'Combos', value:stats.combos},
-      {title:'New Arrivals', value:stats.new_arrivals}
-    ];
-    items.forEach(it=>{
-      const div = document.createElement('div'); div.className='card';
-      div.innerHTML = `<h3>${it.value ?? 0}</h3><div class='muted'>${it.title}</div>`;
-      container.appendChild(div);
-    });
-  }catch(e){console.error(e)}
-}
-
-async function loadCategories(){
-  try{
-    const categories = await api('/categories');
-    const ul = document.getElementById('categoriesList');
-    ul.innerHTML = '';
-    categories.forEach(c=>{
-      const li = document.createElement('li'); li.className='item';
-      li.innerHTML = `<div class='meta'><strong>${c.name}</strong><div class='muted small'>${c.description||''}</div></div>`+
-      `<div class='actions'><button class='btn' data-id='${c.id}'>Edit</button><button class='btn' data-id='${c.id}'>Delete</button></div>`;
-      ul.appendChild(li);
-    });
-  }catch(e){console.error(e)}
-}
-
-// NOTE: older loadProducts removed to avoid duplication; the paginated admin
-// loadProducts(page, pageSize) implementation is defined earlier in this file.
-
-async function loadBanners(){
-  try{
-    const banners = await api('/banners');
-    const list = document.getElementById('bannersList');
-    list.innerHTML = '';
-    banners.forEach(b=>{
-      const div = document.createElement('div'); div.className='item';
-      div.innerHTML = `<img src='${b.image_url}' /><div class='meta'><strong>${b.title||'Banner'}</strong><div class='muted small'>Order: ${b.display_order} • ${b.is_active? 'Active':'Inactive'}</div></div>`+
-        `<div class='actions'><button class='btn' data-id='${b.id}'>Edit</button><button class='btn' data-id='${b.id}'>Delete</button></div>`;
-      list.appendChild(div);
-    });
-  }catch(e){console.error(e)}
-}
-
-async function loadCombos(){
-  try{
-    const res = await api('/combos?page=1&page_size=50');
-    const list = document.getElementById('combosList'); list.innerHTML='';
-    res.items.forEach(c=>{
-      const div = document.createElement('div'); div.className='item';
-      div.innerHTML = `<div class='meta'><strong>${c.name}</strong><div class='muted small'>Code: ${c.combo_code} • ₹${c.price}</div></div>`+
-      `<div class='actions'><button class='btn' data-code='${c.combo_code}'>Edit</button><button class='btn' data-code='${c.combo_code}'>Delete</button></div>`;
-      list.appendChild(div);
-    });
-  }catch(e){console.error(e)}
-}
-
-async function loadNewArrivals(){
-  try{
-    const res = await api('/new-arrivals?page=1&page_size=50');
-    const list = document.getElementById('newArrivalsList'); list.innerHTML='';
-    res.items.forEach(n=>{
-      const div = document.createElement('div'); div.className='item';
-      const p = n.product || {};
-      const img = p.images && p.images[0] ? `<img src='${p.images[0]}' />` : `<img src='/static/js/placeholder.png' />`;
-      div.innerHTML = img + `<div class='meta'><strong>${p.name||'Product'}</strong><div class='muted small'>ID: ${p.id}</div></div>`+
-        `<div class='actions'><button class='btn' data-id='${p.id}'>Remove</button></div>`;
-      list.appendChild(div);
-    });
-  }catch(e){console.error(e)}
-}
-
-// wire create category
-document.getElementById('createCategoryBtn')?.addEventListener('click', async ()=>{
-  const name = document.getElementById('newCategoryName').value.trim();
-  if(!name) return alert('Enter name');
-  try{
-    const res = await fetch('/admin/categories',{
-      method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},
-      body: JSON.stringify({name})
-    });
-    if(!res.ok) throw new Error('Failed to create');
-    document.getElementById('newCategoryName').value='';
-    loadCategories();
-  }catch(e){alert(e.message)}
-});
-
-// banners upload
-document.getElementById('uploadBannersBtn')?.addEventListener('click', async ()=>{
-  const input = document.getElementById('bannerUpload');
-  if(!input.files.length) return alert('Choose images');
-  const form = new FormData();
-  for(const f of input.files) form.append('images', f);
-  try{
-    const res = await fetch('/admin/banners/upload-multiple', {method:'POST', body: form, headers:{'Authorization':'Bearer '+token()}});
-    if(!res.ok) throw new Error('Upload failed');
-    await loadBanners();
-  }catch(e){alert(e.message)}
-});
-
-// initialize dashboard data when loaded
-window.addEventListener('load', ()=>{
-  // if not logged in - redirect to login
-  if(!token()){
-    if(location.pathname !== '/admin/login') location.href='/admin/login';
-    return;
-  }
-  loadStats(); loadCategories(); loadProducts(); loadBanners(); loadCombos(); loadNewArrivals();
-  setupProductsControls();
-  // show admin username placeholder
-  document.getElementById('adminUser').innerText = 'Admin';
-});
+ 
 
