@@ -1,0 +1,117 @@
+/* Responsive overrides for admin dashboard - mobile friendly adjustments */
+/* Mobile-first: make the sidebar collapsible, increase touch targets, and make modals fullscreen on small devices */
+
+/* Ensure buttons and interactive elements are touch-friendly */
+.btn, .action-card, .nav-item {
+  -webkit-tap-highlight-color: rgba(0,0,0,0.05);
+}
+
+.btn, .action-card {
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.nav-item {
+  padding: 12px 16px;
+  min-height: 48px;
+}
+
+/* Make form inputs full width and easier to tap */
+.form-group input[type="text"],
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group textarea,
+.form-group select,
+.search-bar input {
+  width: 100% !important;
+  font-size: 1rem;
+  padding: 12px 14px !important;
+}
+
+.image-preview img { max-width: 100%; height: auto; display:block; }
+.image-preview-container { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Modal: fullscreen on small screens so forms are easy to use */
+.modal-container .modal-content {
+  max-width: 720px;
+}
+
+@media (max-width: 900px) {
+  /* Show menu toggle on smaller screens */
+  .menu-toggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Make topbar slightly smaller and compact */
+  .topbar { padding: 0 12px; height: 64px; }
+  .topbar-title { font-size: 1.05rem; }
+
+  /* Sidebar becomes overlay drawer */
+  .sidebar {
+    width: 80%;
+    max-width: 320px;
+    transform: translateX(-110%);
+    transition: transform 0.28s ease;
+    top: var(--topbar-height);
+    height: calc(100% - var(--topbar-height));
+    z-index: 200;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .mobile-overlay { display: block; }
+
+  .content {
+    margin-left: 0 !important;
+    margin-top: var(--topbar-height);
+    padding: 16px;
+  }
+
+  /* Make grid items stack more vertically on small screens */
+  .items-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .item-card { padding: 12px; }
+
+  /* Modal fullscreen behavior on small devices */
+  .modal-container .modal-content {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+  .modal-container .modal-body { padding: 16px; overflow-y: auto; }
+}
+
+@media (max-width: 480px) {
+  .panel-header h2 { font-size: 1.1rem; }
+  .stat-card h3 { font-size: 1.6rem; }
+  .action-card { padding: 14px; }
+  .user-badge { padding: 6px 10px; font-size: 0.85rem; }
+  .brand { padding: 0 16px 16px; }
+}
+
+/* Make mobile overlay clickable area larger and ensure it shows only when active */
+.mobile-overlay { opacity: 0; pointer-events: none; }
+.mobile-overlay.active { opacity: 1; pointer-events: auto; }
+
+/* Accessibility: focus states for keyboard use */
+.nav-item:focus, .btn:focus, .action-card:focus {
+  outline: 3px solid rgba(184,50,108,0.14);
+  outline-offset: 2px;
+}
+
+/* Keep topbar elements aligned and wrap if needed */
+.topbar-actions { gap: 8px; }
+
+/* Ensure pagination buttons are large enough to tap on mobile */
+.pagination-button { padding: 10px 12px; min-height:44px; }

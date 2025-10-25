@@ -33,10 +33,17 @@ document.querySelectorAll('.nav-item').forEach(a => {
   });
 });
 
-// Mobile menu toggle
-document.getElementById('menuToggle')?.addEventListener('click', () => {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('mobileOverlay').classList.toggle('active');
+// Mobile menu toggle: ensure body scrolling is locked when drawer is open
+const _menuToggle = document.getElementById('menuToggle');
+_menuToggle?.addEventListener('click', () => {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('mobileOverlay');
+  if (!sidebar || !overlay) return;
+  const opening = !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('active');
+  // lock background scroll when open on mobile
+  document.body.style.overflow = opening ? 'hidden' : 'auto';
 });
 
 document.getElementById('mobileOverlay')?.addEventListener('click', closeMobileMenu);
@@ -44,6 +51,7 @@ document.getElementById('mobileOverlay')?.addEventListener('click', closeMobileM
 function closeMobileMenu() {
   document.getElementById('sidebar')?.classList.remove('open');
   document.getElementById('mobileOverlay')?.classList.remove('active');
+  document.body.style.overflow = 'auto';
 }
 
 // Logout
