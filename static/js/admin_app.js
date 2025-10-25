@@ -114,8 +114,16 @@ async function loadCategories() {
 
       const title = document.createElement('h3');
       title.className = 'item-title';
-      const icon = document.createElement('i'); icon.className = 'fas fa-tag';
-      title.appendChild(icon);
+      if (c.icon_url) {
+        const img = document.createElement('img');
+        img.src = c.icon_url;
+        img.alt = c.name || 'icon';
+        img.style.width = '36px'; img.style.height = '36px'; img.style.objectFit = 'cover'; img.style.borderRadius = '6px'; img.style.marginRight = '8px';
+        title.appendChild(img);
+      } else {
+        const icon = document.createElement('i'); icon.className = 'fas fa-tag';
+        title.appendChild(icon);
+      }
       const textNode = document.createTextNode(' ' + (c.name || 'Untitled'));
       title.appendChild(textNode);
 
@@ -137,7 +145,7 @@ async function loadCategories() {
       const editBtn = document.createElement('button');
       editBtn.className = 'btn btn-primary';
       editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit';
-      editBtn.addEventListener('click', () => editCategory(c.id, c.name || '', c.description || ''));
+  editBtn.addEventListener('click', () => editCategory(c.id, c.name || '', c.description || '', c.icon_url || ''));
 
       const delBtn = document.createElement('button');
       delBtn.className = 'btn btn-danger';
@@ -170,6 +178,11 @@ function showCreateCategory() {
         <label><i class="fas fa-align-left"></i> Description</label>
         <textarea name="description" placeholder="Enter category description"></textarea>
       </div>
+          <div class="form-group">
+            <label><i class="fas fa-image"></i> Icon (optional)</label>
+            <input type="file" name="icon" accept="image/*" onchange="previewImages(event, 'categoryIconPreview')">
+            <div id="categoryIconPreview" class="image-preview-container"></div>
+          </div>
       <div class="form-actions">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary">
@@ -181,7 +194,7 @@ function showCreateCategory() {
   showModal('<i class="fas fa-folder-plus"></i> Create New Category', content);
 }
 
-function editCategory(id, name, description) {
+function editCategory(id, name, description, icon_url) {
   // Build form elements to avoid string interpolation issues with quotes
   const form = document.createElement('form');
   form.id = 'categoryForm';
@@ -191,7 +204,12 @@ function editCategory(id, name, description) {
   const label1 = document.createElement('label'); label1.innerHTML = '<i class="fas fa-tag"></i> Category Name *';
   const input = document.createElement('input'); input.type = 'text'; input.name = 'name'; input.required = true; input.value = name;
   fg1.appendChild(label1); fg1.appendChild(input);
-
+  const fg3 = document.createElement('div'); fg3.className = 'form-group';
+  const label3 = document.createElement('label'); label3.innerHTML = '<i class="fas fa-image"></i> Icon (optional)';
+  const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.name = 'icon'; fileInput.accept = 'image/*';
+  fileInput.addEventListener('change', (e) => previewImages(e, 'editCategoryIconPreview'));
+  const previewDiv = document.createElement('div'); previewDiv.id = 'editCategoryIconPreview'; previewDiv.className = 'image-preview-container';
+  fg3.appendChild(label3); fg3.appendChild(fileInput); fg3.appendChild(previewDiv);
   const fg2 = document.createElement('div'); fg2.className = 'form-group';
   const label2 = document.createElement('label'); label2.innerHTML = '<i class="fas fa-align-left"></i> Description';
   const textarea = document.createElement('textarea'); textarea.name = 'description'; textarea.textContent = description || '';
@@ -202,26 +220,48 @@ function editCategory(id, name, description) {
   const saveBtn = document.createElement('button'); saveBtn.type = 'submit'; saveBtn.className = 'btn btn-primary'; saveBtn.innerHTML = '<i class="fas fa-save"></i> Update Category';
   actions.appendChild(cancelBtn); actions.appendChild(saveBtn);
 
-  form.appendChild(fg1); form.appendChild(fg2); form.appendChild(actions);
+  form.appendChild(fg1); form.appendChild(fg2); form.appendChild(fg3); form.appendChild(actions);
 
   showModal('<i class="fas fa-edit"></i> Edit Category', '');
   const modalBody = document.getElementById('modalBody');
   modalBody.innerHTML = ''; // ensure empty
   modalBody.appendChild(form);
+  // If an icon_url was provided, show it in the preview container
+  if (icon_url) {
+    const preview = document.createElement('div');
+    preview.className = 'image-preview';
+    preview.setAttribute('data-existing-url', icon_url);
+    preview.innerHTML = `
+      <img src="${icon_url}" alt="icon">
+      <button type="button" class="image-preview-remove" onclick="removeExistingImage(this)">
+        <i class="fas fa-times"></i>
+      </button>
+    `;
+    previewDiv.appendChild(preview);
+  }
 }
 
 async function submitCategory(e) {
   e.preventDefault();
   const form = e.target;
-  const data = { name: form.name.value, description: form.description.value };
+  const formData = new FormData();
+  formData.append('name', form.name.value);
+  formData.append('description', form.description.value || '');
+  const iconFile = form.icon?.files && form.icon.files[0];
+  if (iconFile) formData.append('icon', iconFile);
+  // If user removed existing icon, include that flag
+  if (form.remove_icon && form.remove_icon.value === 'true') {
+    formData.append('remove_icon', 'true');
+  }
   try {
-    const btn = form.querySelector('button[type="submit"]');
-    if (btn) { btn.disabled = true; const prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...'; }
+  const btn = form.querySelector('button[type="submit"]');
+  let prev = null;
+  if (btn) { btn.disabled = true; prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...'; }
 
     const res = await fetch('/admin/categories', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
-      body: JSON.stringify(data)
+      headers: { 'Authorization': 'Bearer ' + token() },
+      body: formData
     });
 
     if (!res.ok) {
@@ -232,7 +272,7 @@ async function submitCategory(e) {
     closeModal();
     loadCategories();
     showNotification('Category created successfully!', 'success');
-    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   } catch (e) {
     showNotification(e.message || 'Failed to create category', 'error');
     // keep modal open so user can correct
@@ -242,15 +282,20 @@ async function submitCategory(e) {
 async function updateCategory(e, id) {
   e.preventDefault();
   const form = e.target;
-  const data = { name: form.name.value, description: form.description.value };
+  const formData = new FormData();
+  formData.append('name', form.name.value);
+  formData.append('description', form.description.value || '');
+  const iconFile = form.icon?.files && form.icon.files[0];
+  if (iconFile) formData.append('icon', iconFile);
   try {
-    const btn = form.querySelector('button[type="submit"]');
-    if (btn) { btn.disabled = true; const prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+  const btn = form.querySelector('button[type="submit"]');
+  let prev = null;
+  if (btn) { btn.disabled = true; prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
 
     const res = await fetch(`/admin/categories/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
-      body: JSON.stringify(data)
+      headers: { 'Authorization': 'Bearer ' + token() },
+      body: formData
     });
 
     if (!res.ok) {
@@ -261,7 +306,7 @@ async function updateCategory(e, id) {
     closeModal();
     loadCategories();
     showNotification('Category updated successfully!', 'success');
-    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+  if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   } catch (e) {
     showNotification(e.message || 'Failed to update category', 'error');
   }
@@ -1334,14 +1379,28 @@ function removeImagePreview(button, containerId) {
   const container = document.getElementById(containerId);
   if (container.children.length === 0) {
     const form = button.closest('form');
-    const fileInput = form.querySelector(`input[type="file"][onchange*="${containerId}"]`);
+    // Try to find the file input that produced this preview. First try matching onchange, then fallback to name='icon'.
+    let fileInput = null;
+    try {
+      fileInput = form.querySelector(`input[type="file"][onchange*="${containerId}"]`);
+    } catch (e) {
+      fileInput = null;
+    }
+    if (!fileInput) fileInput = form.querySelector('input[type="file"][name="icon"]') || form.querySelector('input[type="file"]');
     if (fileInput) fileInput.value = '';
   }
 }
 
 function removeExistingImage(button) {
   if (confirm('Remove this image?')) {
-    button.parentElement.remove();
+    const parent = button.parentElement;
+    // if inside a form for category edit, mark remove_icon so server clears the icon
+    const form = button.closest('form');
+    if (form) {
+      const hidden = form.querySelector('input[name="remove_icon"]');
+      if (hidden) hidden.value = 'true';
+    }
+    parent.remove();
   }
 }
 

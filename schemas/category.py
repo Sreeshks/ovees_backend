@@ -6,6 +6,7 @@ from typing import Optional
 class CategoryBase(BaseModel):
     name: str
     description: Optional[str] = None
+    icon_url: Optional[str] = None
 
 
 class CategoryCreate(CategoryBase):
@@ -15,6 +16,7 @@ class CategoryCreate(CategoryBase):
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    icon_url: Optional[str] = None
 
 
 class CategoryResponse(CategoryBase):

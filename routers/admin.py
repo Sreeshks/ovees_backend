@@ -175,18 +175,30 @@ def login(credentials: AdminLogin, db: Session = Depends(get_db)):
 
 # ==================== CATEGORIES ====================
 @router.post("/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-def create_category(
-    category: CategoryCreate, 
+async def create_category(
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    icon: Optional[UploadFile] = File(None),
+    remove_icon: bool = Form(False),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin)
 ):
-    """Create a new category"""
+    """Create a new category (supports optional icon upload)"""
     # Check if category already exists
-    existing = db.query(Category).filter(Category.name == category.name).first()
+    existing = db.query(Category).filter(Category.name == name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Category already exists")
-    
-    new_category = Category(**category.dict())
+
+    new_category = Category(name=name, description=description)
+
+    # Handle icon upload to Cloudinary if provided
+    if icon:
+        if not icon.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="Icon must be an image")
+        result = await upload_image(icon, folder=f"ovees_jewelry/categories/{name}")
+        new_category.icon_url = result.get('secure_url')
+        new_category.icon_public_id = result.get('public_id')
+
     db.add(new_category)
     db.commit()
     db.refresh(new_category)
@@ -194,21 +206,49 @@ def create_category(
 
 
 @router.put("/categories/{category_id}", response_model=CategoryResponse)
-def update_category(
+async def update_category(
     category_id: int,
-    category: CategoryUpdate,
+    name: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    icon: Optional[UploadFile] = File(None),
+    remove_icon: bool = Form(False),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin)
 ):
-    """Update a category"""
+    """Update a category (supports replacing icon)"""
     db_category = db.query(Category).filter(Category.id == category_id).first()
     if not db_category:
         raise HTTPException(status_code=404, detail="Category not found")
-    
-    # Update fields
-    for key, value in category.dict(exclude_unset=True).items():
-        setattr(db_category, key, value)
-    
+
+    if name is not None:
+        db_category.name = name
+    if description is not None:
+        db_category.description = description
+
+    # Replace icon if provided
+    if icon:
+        if not icon.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="Icon must be an image")
+        # delete existing icon from cloudinary if present
+        try:
+            if db_category.icon_public_id:
+                delete_image(db_category.icon_public_id)
+        except Exception:
+            pass
+        result = await upload_image(icon, folder=f"ovees_jewelry/categories/{db_category.name}")
+        db_category.icon_url = result.get('secure_url')
+        db_category.icon_public_id = result.get('public_id')
+
+    # If client requested removal of existing icon (and did not upload a new one)
+    if remove_icon and not icon:
+        try:
+            if db_category.icon_public_id:
+                delete_image(db_category.icon_public_id)
+        except Exception:
+            pass
+        db_category.icon_url = None
+        db_category.icon_public_id = None
+
     db.commit()
     db.refresh(db_category)
     return db_category
