@@ -1068,10 +1068,10 @@ function showCreateCombo() {
         </div>
       </div>
       <div class="form-row">
-            <div class="form-group">
-              <label><i class="fas fa-rupee-sign"></i> Price *</label>
-              <input type="number" name="combo_price" required step="0.01">
-            </div>
+        <div class="form-group">
+          <label><i class="fas fa-rupee-sign"></i> Price *</label>
+          <input type="number" name="combo_price" required step="0.01">
+        </div>
         <div class="form-group">
           <label><i class="fas fa-toggle-on"></i> Status</label>
           <select name="is_active">
@@ -1084,10 +1084,16 @@ function showCreateCombo() {
         <label><i class="fas fa-align-left"></i> Description</label>
         <textarea name="description"></textarea>
       </div>
+
       <div class="form-group">
-        <label><i class="fas fa-list"></i> Product IDs (comma-separated)</label>
-        <input type="text" name="product_ids" placeholder="1, 2, 3">
+        <label><i class="fas fa-search"></i> Add Products</label>
+        <input type="text" id="comboProductSearch" placeholder="Search products by name or code..." autocomplete="off">
+        <div id="comboProductResults" class="items-grid" style="margin-top:8px"></div>
+        <div id="comboSelectedProducts" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px"></div>
+        <input type="hidden" name="product_ids" id="comboProductIdsHidden" value="">
+        <small class="muted">Search and pick products to include in the combo. Selected products will be submitted automatically.</small>
       </div>
+
       <div class="form-actions">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary">
@@ -1097,6 +1103,9 @@ function showCreateCombo() {
     </form>
   `;
   showModal('<i class="fas fa-gift"></i> Create New Combo', content);
+
+  // Initialize the combo product selector for the create form (use rAF to ensure DOM is ready)
+  requestAnimationFrame(() => { try { setupComboSelector('combo', ''); } catch (e) { console.error('setupComboSelector(combo) failed', e); } });
 }
 
 async function submitCombo(e) {
@@ -1170,7 +1179,7 @@ async function editCombo(code) {
     }).filter(Boolean).join(', ');
 
     const comboPriceVal = combo.combo_price !== undefined && combo.combo_price !== null ? combo.combo_price : (combo.price !== undefined ? combo.price : '');
-    const content = `
+  const content = `
       <form id="comboForm" onsubmit="updateCombo(event, '${escapeHtml(code)}')">
         <div class="form-row">
           <div class="form-group">
@@ -1200,8 +1209,12 @@ async function editCombo(code) {
           <textarea name="description">${escapeHtml(combo.description || '')}</textarea>
         </div>
         <div class="form-group">
-          <label><i class="fas fa-list"></i> Product IDs (comma-separated)</label>
-          <input type="text" name="product_ids" placeholder="1, 2, 3" value="${escapeHtml(productIds)}">
+          <label><i class="fas fa-search"></i> Add Products</label>
+          <input type="text" id="comboEditProductSearch" placeholder="Search products by name or code..." autocomplete="off">
+          <div id="comboEditProductResults" class="items-grid" style="margin-top:8px"></div>
+          <div id="comboEditSelectedProducts" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px"></div>
+          <input type="hidden" name="product_ids" id="comboEditProductIdsHidden" value="${escapeHtml(productIds)}">
+          <small class="muted">Search and pick products to include in the combo. Selected products will be submitted automatically.</small>
         </div>
         <div class="form-actions">
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>
@@ -1212,7 +1225,9 @@ async function editCombo(code) {
       </form>
     `;
 
-    showModal('<i class="fas fa-edit"></i> Edit Combo', content);
+  showModal('<i class="fas fa-edit"></i> Edit Combo', content);
+  // Initialize selector with existing IDs (productIds contains comma separated string)
+  requestAnimationFrame(() => { try { setupComboSelector('comboEdit', productIds); } catch (e) { console.error('setupComboSelector(comboEdit) failed', e); } });
   } catch (e) {
     showNotification(e.message || 'Failed to load combo', 'error');
   }
@@ -1299,9 +1314,12 @@ function showAddNewArrival() {
   const content = `
     <form id="newArrivalForm" onsubmit="submitNewArrival(event)">
       <div class="form-group">
-        <label><i class="fas fa-hashtag"></i> Product ID *</label>
-        <input type="number" name="product_id" required placeholder="Enter product ID">
-        <small class="muted">Enter the ID of the product to add to new arrivals</small>
+        <label><i class="fas fa-search"></i> Select Product</label>
+        <input type="text" id="newArrivalProductSearch" placeholder="Search products by name or code..." autocomplete="off">
+        <div id="newArrivalProductResults" class="items-grid" style="margin-top:8px"></div>
+        <div id="newArrivalSelectedProducts" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px"></div>
+        <input type="hidden" name="product_id" id="newArrivalProductIdsHidden" value="">
+        <small class="muted">Search and pick one product to add to new arrivals.</small>
       </div>
       <div class="form-actions">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
@@ -1312,12 +1330,39 @@ function showAddNewArrival() {
     </form>
   `;
   showModal('<i class="fas fa-star"></i> Add to New Arrivals', content);
+
+  // initialize single-select combo-like selector for new arrivals
+  requestAnimationFrame(() => {
+    try { setupComboSelector('newArrival', ''); } catch (e) { console.error('setupComboSelector(newArrival) failed', e); }
+    // override add to ensure single selection
+    window.addComboProduct_newArrival = function(product) {
+      if (!product || !product.id) return;
+      window.newArrivalSelectedList = [product];
+      const S = document.getElementById('newArrivalSelectedProducts');
+      if (S) {
+        S.innerHTML = `<div class="selected-pill" data-id="${product.id}" style="display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface);">
+            <div style="font-weight:600">${escapeHtml(product.name || product.product_code || ('#'+product.id))}</div>
+            <button type="button" class="btn" onclick="window.removeComboProduct_newArrival(${product.id})" style="padding:6px 8px;min-width:24px">&times;</button>
+          </div>`;
+      }
+      const H = document.getElementById('newArrivalProductIdsHidden'); if (H) H.value = String(product.id);
+    };
+    window.removeComboProduct_newArrival = function(id) {
+      window.newArrivalSelectedList = [];
+      const S = document.getElementById('newArrivalSelectedProducts'); if (S) S.innerHTML = '';
+      const H = document.getElementById('newArrivalProductIdsHidden'); if (H) H.value = '';
+    };
+  });
 }
 
 async function submitNewArrival(e) {
   e.preventDefault();
   const form = e.target;
-  const data = { product_id: parseInt(form.product_id.value) };
+  // read hidden selected product id (first one)
+  const hidden = document.getElementById('newArrivalProductIdsHidden');
+  const pid = hidden && hidden.value ? parseInt(hidden.value) : null;
+  if (!pid) { showNotification('Please select a product', 'error'); return; }
+  const data = { product_id: pid };
   try {
     await fetch('/admin/new-arrivals', {
       method: 'POST',
@@ -1378,6 +1423,122 @@ function previewImages(event, containerId) {
     };
     
     reader.readAsDataURL(file);
+  }
+}
+
+/* Combo product selector helper
+   prefix: string prefix used for element ids (e.g. 'combo' or 'comboEdit')
+   initial: either empty string or comma-separated product ids (as used by server)
+*/
+function setupComboSelector(prefix, initial) {
+  const searchInput = document.getElementById(prefix + 'ProductSearch');
+  const resultsEl = document.getElementById(prefix + 'ProductResults');
+  const selectedEl = document.getElementById(prefix + 'SelectedProducts');
+  const hiddenEl = document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden'.replace('ProductIdsHidden','ProductIdsHidden'));
+  const hiddenIds = document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden');
+  const hiddenInput = document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden');
+
+  // Fallbacks for edit prefix naming
+  const resultsElAlt = resultsEl || document.getElementById(prefix + 'ProductResults');
+  const selectedElAlt = selectedEl || document.getElementById(prefix + 'SelectedProducts');
+  const hiddenElAlt = document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden');
+
+  const R = resultsElAlt;
+  const S = selectedElAlt;
+  const H = document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden') || document.getElementById(prefix + 'ProductIdsHidden');
+
+  // Selected list in-memory
+  window[prefix + 'SelectedList'] = [];
+
+  function updateHidden() {
+    const ids = window[prefix + 'SelectedList'].map(p => p.id);
+    if (H) H.value = ids.join(', ');
+  }
+
+  function renderSelected() {
+    if (!S) return;
+    S.innerHTML = window[prefix + 'SelectedList'].map(p => `
+      <div class="selected-pill" data-id="${p.id}" style="display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface);">
+        <div style="font-weight:600">${escapeHtml(p.name || p.product_code || ('#'+p.id))}</div>
+        <button type="button" class="btn" onclick="window.removeComboProduct_${prefix}(${p.id})" style="padding:6px 8px;min-width:24px">&times;</button>
+      </div>
+    `).join('');
+  }
+
+  // Public remove function (namespaced)
+  window['removeComboProduct_' + prefix] = function(id) {
+    window[prefix + 'SelectedList'] = window[prefix + 'SelectedList'].filter(x => x.id !== id);
+    renderSelected();
+    updateHidden();
+  };
+
+  window['addComboProduct_' + prefix] = function(product) {
+    if (!product || !product.id) return;
+    if (window[prefix + 'SelectedList'].some(x => x.id === product.id)) return;
+    window[prefix + 'SelectedList'].push(product);
+    renderSelected();
+    updateHidden();
+  };
+
+  // search
+  let debounceTimer = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        if (!q || q.length < 2) { if (R) R.innerHTML = ''; return; }
+        try {
+          const res = await api(`/admin/products?page=1&page_size=8&search=${encodeURIComponent(q)}`);
+          const items = res.items || [];
+          if (R) {
+            R.innerHTML = items.map(p => `
+              <div class="item-card" style="display:flex;align-items:center;gap:8px;">
+                <img src="${p.images && p.images[0] ? p.images[0] : 'https://via.placeholder.com/80x60?text=No+Image'}" style="width:72px;height:56px;object-fit:cover;border-radius:6px"/>
+                <div style="flex:1">
+                  <div style="font-weight:600">${escapeHtml(p.name)}</div>
+                  <div class="muted small">${escapeHtml(p.product_code || '')} • ₹${p.normal_price || ''}</div>
+                </div>
+                <div>
+                  <button type="button" class="btn btn-primary add-combo-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}" data-code="${escapeHtml(p.product_code || '')}" data-price="${p.normal_price || ''}">Add</button>
+                </div>
+              </div>
+            `).join('');
+
+            // attach handlers
+            R.querySelectorAll('.add-combo-btn').forEach(btn => {
+              btn.addEventListener('click', (ev) => {
+                const b = ev.currentTarget;
+                const product = {
+                  id: parseInt(b.getAttribute('data-id')),
+                  name: b.getAttribute('data-name'),
+                  product_code: b.getAttribute('data-code'),
+                  normal_price: parseFloat(b.getAttribute('data-price')) || 0
+                };
+                window['addComboProduct_' + prefix](product);
+              });
+            });
+          }
+        } catch (err) {
+          if (R) R.innerHTML = '<div class="muted">Failed to search</div>';
+        }
+      }, 260);
+    });
+  }
+
+  // Initialize with initial ids (comma separated) if provided
+  if (initial) {
+    const ids = (typeof initial === 'string' ? initial.split(',').map(s => s.trim()).filter(Boolean) : (Array.isArray(initial) ? initial : []) ).map(x => x);
+    ids.forEach(id => {
+      const parsed = parseInt(id);
+      if (!isNaN(parsed)) {
+        // create placeholder entry (we'll try to fetch details lazily)
+        const p = { id: parsed, name: `#${parsed}`, product_code: '' };
+        window[prefix + 'SelectedList'].push(p);
+      }
+    });
+    renderSelected();
+    updateHidden();
   }
 }
 
