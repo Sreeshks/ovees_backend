@@ -4,12 +4,71 @@ const token = () => localStorage.getItem('ovees_admin_token') || '';
 async function api(path, opts = {}) {
   const headers = opts.headers || {};
   if (token()) headers['Authorization'] = 'Bearer ' + token();
-  const res = await fetch(path, { ...opts, headers });
-  if (res.status === 401) {
-    window.location.href = '/admin/login';
-    throw new Error('Unauthorized');
+  // show loader for API calls triggered via api()
+  showGlobalLoader();
+  try {
+    const res = await fetch(path, { ...opts, headers });
+    if (res.status === 401) {
+      window.location.href = '/admin/login';
+      throw new Error('Unauthorized');
+    }
+    return res.json();
+  } finally {
+    hideGlobalLoader();
   }
-  return res.json();
+}
+
+// Max allowed file size for uploads (10 MB)
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+function isFileTooLarge(file) {
+  if (!file) return false;
+  return file.size > MAX_FILE_SIZE;
+}
+
+// Global loading overlay
+function showGlobalLoader(message = 'Loading...') {
+  let el = document.getElementById('globalLoader');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'globalLoader';
+    el.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);z-index:99999;';
+    el.innerHTML = `
+      <div style="background:var(--surface);padding:18px 22px;border-radius:8px;display:flex;gap:12px;align-items:center;box-shadow:var(--shadow-lg);">
+        <i class="fas fa-spinner fa-pulse" style="font-size:20px;color:var(--primary)"></i>
+        <div style="font-weight:600">${message}</div>
+      </div>
+    `;
+    document.body.appendChild(el);
+  } else {
+    el.style.display = 'flex';
+    const textDiv = el.querySelector('div > div');
+    if (textDiv) textDiv.textContent = message;
+  }
+  document.body.style.cursor = 'wait';
+}
+
+function hideGlobalLoader() {
+  const el = document.getElementById('globalLoader');
+  if (el) el.style.display = 'none';
+  document.body.style.cursor = 'auto';
+}
+
+// Helper to run fetch with Authorization header and loader
+async function fetchWithAuthAndLoader(url, opts = {}) {
+  const headers = opts.headers || {};
+  if (token()) headers['Authorization'] = 'Bearer ' + token();
+  showGlobalLoader();
+  try {
+    const res = await fetch(url, { ...opts, headers });
+    if (res.status === 401) {
+      window.location.href = '/admin/login';
+      throw new Error('Unauthorized');
+    }
+    return res;
+  } finally {
+    hideGlobalLoader();
+  }
 }
 
 // Navigation handling
@@ -191,6 +250,7 @@ function showCreateCategory() {
             <input type="file" name="icon" accept="image/*" onchange="previewImages(event, 'categoryIconPreview')">
             <div id="categoryIconPreview" class="image-preview-container"></div>
           </div>
+                  <div style="margin-top:6px"><small class="muted">Max file size: 10 MB. Accepted: JPG, PNG, WebP.</small></div>
       <div class="form-actions">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary">
@@ -216,8 +276,9 @@ function editCategory(id, name, description, icon_url) {
   const label3 = document.createElement('label'); label3.innerHTML = '<i class="fas fa-image"></i> Icon (optional)';
   const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.name = 'icon'; fileInput.accept = 'image/*';
   fileInput.addEventListener('change', (e) => previewImages(e, 'editCategoryIconPreview'));
+  const sizeNote = document.createElement('small'); sizeNote.className = 'muted'; sizeNote.style.display = 'block'; sizeNote.textContent = 'Max file size: 10 MB.';
   const previewDiv = document.createElement('div'); previewDiv.id = 'editCategoryIconPreview'; previewDiv.className = 'image-preview-container';
-  fg3.appendChild(label3); fg3.appendChild(fileInput); fg3.appendChild(previewDiv);
+  fg3.appendChild(label3); fg3.appendChild(fileInput); fg3.appendChild(previewDiv); fg3.appendChild(sizeNote);
   const fg2 = document.createElement('div'); fg2.className = 'form-group';
   const label2 = document.createElement('label'); label2.innerHTML = '<i class="fas fa-align-left"></i> Description';
   const textarea = document.createElement('textarea'); textarea.name = 'description'; textarea.textContent = description || '';
@@ -256,19 +317,25 @@ async function submitCategory(e) {
   formData.append('name', form.name.value);
   formData.append('description', form.description.value || '');
   const iconFile = form.icon?.files && form.icon.files[0];
-  if (iconFile) formData.append('icon', iconFile);
+  // validate size
+  if (iconFile) {
+    if (isFileTooLarge(iconFile)) {
+      showNotification(`File "${iconFile.name}" exceeds the 10 MB limit`, 'error');
+      return;
+    }
+    formData.append('icon', iconFile);
+  }
   // If user removed existing icon, include that flag
   if (form.remove_icon && form.remove_icon.value === 'true') {
     formData.append('remove_icon', 'true');
   }
   try {
-  const btn = form.querySelector('button[type="submit"]');
-  let prev = null;
-  if (btn) { btn.disabled = true; prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...'; }
+    const btn = form.querySelector('button[type="submit"]');
+    let prev = null;
+    if (btn) { btn.disabled = true; prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...'; }
 
-    const res = await fetch('/admin/categories', {
+    const res = await fetchWithAuthAndLoader('/admin/categories', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token() },
       body: formData
     });
 
@@ -280,7 +347,7 @@ async function submitCategory(e) {
     closeModal();
     loadCategories();
     showNotification('Category created successfully!', 'success');
-  if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   } catch (e) {
     showNotification(e.message || 'Failed to create category', 'error');
     // keep modal open so user can correct
@@ -294,15 +361,20 @@ async function updateCategory(e, id) {
   formData.append('name', form.name.value);
   formData.append('description', form.description.value || '');
   const iconFile = form.icon?.files && form.icon.files[0];
-  if (iconFile) formData.append('icon', iconFile);
+  if (iconFile) {
+    if (isFileTooLarge(iconFile)) {
+      showNotification(`File "${iconFile.name}" exceeds the 10 MB limit`, 'error');
+      return;
+    }
+    formData.append('icon', iconFile);
+  }
   try {
-  const btn = form.querySelector('button[type="submit"]');
-  let prev = null;
-  if (btn) { btn.disabled = true; prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+    const btn = form.querySelector('button[type="submit"]');
+    let prev = null;
+    if (btn) { btn.disabled = true; prev = btn.innerHTML; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
 
-    const res = await fetch(`/admin/categories/${id}`, {
+    const res = await fetchWithAuthAndLoader(`/admin/categories/${id}`, {
       method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + token() },
       body: formData
     });
 
@@ -314,7 +386,7 @@ async function updateCategory(e, id) {
     closeModal();
     loadCategories();
     showNotification('Category updated successfully!', 'success');
-  if (btn) { btn.disabled = false; btn.innerHTML = prev; }
+    if (btn) { btn.disabled = false; btn.innerHTML = prev; }
   } catch (e) {
     showNotification(e.message || 'Failed to update category', 'error');
   }
@@ -323,16 +395,11 @@ async function updateCategory(e, id) {
 async function deleteCategory(id) {
   if (!confirm('Are you sure you want to delete this category?')) return;
   try {
-    const res = await fetch(`/admin/categories/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token() }
-    });
-
+    const res = await fetchWithAuthAndLoader(`/admin/categories/${id}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(()=>({ detail: 'Failed to delete category' }));
       throw new Error(err.detail || 'Failed to delete category');
     }
-
     loadCategories();
     showNotification('Category deleted successfully!', 'success');
   } catch (e) {
@@ -601,7 +668,7 @@ async function showCreateProduct() {
       <div class="form-group">
         <label><i class="fas fa-image"></i> Product Images</label>
         <input type="file" name="images" accept="image/*" multiple onchange="previewImages(event, 'imagePreview')">
-        <small class="muted">Select multiple images (JPG, PNG, WebP)</small>
+        <small class="muted">Select multiple images (JPG, PNG, WebP). Max file size: 10 MB each.</small>
         <div id="imagePreview" class="image-preview-container"></div>
       </div>
       <div class="form-actions">
@@ -688,7 +755,7 @@ async function editProduct(code) {
         <div class="form-group">
           <label><i class="fas fa-plus-circle"></i> Add New Images</label>
           <input type="file" name="images" accept="image/*" multiple onchange="previewImages(event, 'newImagePreview')">
-          <small class="muted">Select additional images to add</small>
+          <small class="muted">Select additional images to add. Max file size: 10 MB each.</small>
           <div id="newImagePreview" class="image-preview-container"></div>
         </div>
         <div class="form-actions">
@@ -725,26 +792,29 @@ async function submitProduct(e) {
     formData.append('details', form.details.value);
   }
   
-  // Add image files
-  const imageFiles = form.images.files;
+  // Add image files (validate size)
+  const imageFiles = form.images.files || [];
   if (imageFiles.length > 0) {
     for (const file of imageFiles) {
+      if (isFileTooLarge(file)) {
+        showNotification(`File "${file.name}" exceeds the 10 MB limit`, 'error');
+        return;
+      }
       formData.append('images', file);
     }
   }
-  
+
   try {
-    const res = await fetch('/admin/products', {
+    const res = await fetchWithAuthAndLoader('/admin/products', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token() },
       body: formData
     });
-    
+
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.detail || 'Failed to create product');
     }
-    
+
     closeModal();
     loadProducts();
     showNotification('Product created successfully!', 'success');
@@ -785,6 +855,10 @@ async function updateProduct(e, code) {
   
   if (hasNewImages) {
     for (const file of imageFiles) {
+      if (isFileTooLarge(file)) {
+        showNotification(`File "${file.name}" exceeds the 10 MB limit`, 'error');
+        return;
+      }
       formData.append('images', file);
     }
     formData.append('replace_images', 'false'); // Append new images
@@ -799,17 +873,16 @@ async function updateProduct(e, code) {
   }
   
   try {
-    const res = await fetch(`/admin/products/${code}`, {
+    const res = await fetchWithAuthAndLoader(`/admin/products/${code}`, {
       method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + token() },
       body: formData
     });
-    
+
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.detail || 'Failed to update product');
     }
-    
+
     closeModal();
     loadProducts();
     showNotification('Product updated successfully!', 'success');
@@ -821,10 +894,8 @@ async function updateProduct(e, code) {
 async function deleteProduct(code) {
   if (!confirm('Are you sure you want to delete this product?')) return;
   try {
-    await fetch(`/admin/products/${code}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token() }
-    });
+    const res = await fetchWithAuthAndLoader(`/admin/products/${code}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete product');
     loadProducts();
     showNotification('Product deleted successfully!', 'success');
   } catch (e) {
@@ -873,7 +944,7 @@ function showCreateBanner() {
       <div class="form-group">
         <label><i class="fas fa-images"></i> Upload Banner Images *</label>
         <input type="file" id="bannerImages" name="images" accept="image/*" multiple required onchange="previewImages(event, 'bannerPreview')">
-        <small class="muted">Select one or multiple banner images (JPG, PNG, WebP)</small>
+        <small class="muted">Select one or multiple banner images (JPG, PNG, WebP). Max file size: 10 MB each.</small>
         <div id="bannerPreview" class="image-preview-container"></div>
       </div>
       <div class="form-actions">
@@ -897,14 +968,18 @@ async function submitBanners(e) {
   }
   
   const formData = new FormData();
+  // validate sizes
   for (const file of files) {
+    if (isFileTooLarge(file)) {
+      showNotification(`File "${file.name}" exceeds the 10 MB limit`, 'error');
+      return;
+    }
     formData.append('images', file);
   }
   
   try {
-    const res = await fetch('/admin/banners/upload-multiple', {
+    const res = await fetchWithAuthAndLoader('/admin/banners/upload-multiple', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token() },
       body: formData
     });
     
@@ -980,9 +1055,9 @@ async function updateBanner(e, id) {
   }
   
   try {
-    const res = await fetch(`/admin/banners/${id}`, {
+    const res = await fetchWithAuthAndLoader(`/admin/banners/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
     
@@ -1002,16 +1077,11 @@ async function updateBanner(e, id) {
 async function deleteBanner(id) {
   if (!confirm('Are you sure you want to delete this banner?')) return;
   try {
-    const res = await fetch(`/admin/banners/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token() }
-    });
-    
+    const res = await fetchWithAuthAndLoader(`/admin/banners/${id}`, { method: 'DELETE' });
     if (!res.ok && res.status !== 204) {
       const error = await res.json();
       throw new Error(error.detail || 'Failed to delete banner');
     }
-    
     loadBanners();
     showNotification('Banner deleted successfully!', 'success');
   } catch (e) {
@@ -1122,9 +1192,9 @@ async function submitCombo(e) {
       products: productsPayload
     };
     try {
-      const res = await fetch('/admin/combos', {
+      const res = await fetchWithAuthAndLoader('/admin/combos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
       if (!res.ok) {
@@ -1246,9 +1316,9 @@ async function updateCombo(e, code) {
     products: productsPayload
   };
   try {
-    const res = await fetch(`/admin/combos/${code}`, {
+    const res = await fetchWithAuthAndLoader(`/admin/combos/${code}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
     if (!res.ok) {
@@ -1266,10 +1336,8 @@ async function updateCombo(e, code) {
 async function deleteCombo(code) {
   if (!confirm('Are you sure you want to delete this combo?')) return;
   try {
-    await fetch(`/admin/combos/${code}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token() }
-    });
+    const res = await fetchWithAuthAndLoader(`/admin/combos/${code}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete combo');
     loadCombos();
     showNotification('Combo deleted successfully!', 'success');
   } catch (e) {
@@ -1364,11 +1432,12 @@ async function submitNewArrival(e) {
   if (!pid) { showNotification('Please select a product', 'error'); return; }
   const data = { product_id: pid };
   try {
-    await fetch('/admin/new-arrivals', {
+    const res = await fetchWithAuthAndLoader('/admin/new-arrivals', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
+    if (!res.ok) throw new Error('Failed to add to new arrivals');
     closeModal();
     loadNewArrivals();
     showNotification('Product added to new arrivals!', 'success');
@@ -1380,10 +1449,10 @@ async function submitNewArrival(e) {
 async function removeNewArrival(productId) {
   if (!confirm('Remove this product from new arrivals?')) return;
   try {
-    await fetch(`/admin/new-arrivals/${productId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token() }
+    const res = await fetchWithAuthAndLoader(`/admin/new-arrivals/${productId}`, {
+      method: 'DELETE'
     });
+    if (!res.ok) throw new Error('Failed to remove');
     loadNewArrivals();
     showNotification('Removed from new arrivals!', 'success');
   } catch (e) {
@@ -1401,15 +1470,22 @@ function escapeHtml(text) {
 
 function previewImages(event, containerId) {
   const container = document.getElementById(containerId);
+  if (!container) return;
   container.innerHTML = '';
-  const files = event.target.files;
-  
+  const files = event.target.files || [];
+
   if (files.length === 0) return;
-  
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
+
+    // enforce client-side size limit
+    if (isFileTooLarge(file)) {
+      showNotification(`File "${file.name}" exceeds the 10 MB limit`, 'error');
+      continue;
+    }
+
     const reader = new FileReader();
-    
     reader.onload = (e) => {
       const preview = document.createElement('div');
       preview.className = 'image-preview';
@@ -1421,7 +1497,7 @@ function previewImages(event, containerId) {
       `;
       container.appendChild(preview);
     };
-    
+
     reader.readAsDataURL(file);
   }
 }
