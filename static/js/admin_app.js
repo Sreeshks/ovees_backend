@@ -1157,11 +1157,16 @@ function showCreateCombo() {
       <div class="form-row">
         <div class="form-group">
           <label><i class="fas fa-tags"></i> Normal Price (MRP)</label>
-          <input type="number" id="comboNormalPrice" name="normal_price" step="0.01" value="0.00" disabled>
+          <input type="number" id="comboNormalPrice" name="normal_price" step="0.01" value="0.00" disabled title="Auto-calculated — not editable">
         </div>
         <div class="form-group">
-          <label><i class="fas fa-calculator"></i> Total Price</label>
-          <input type="number" id="comboTotalPrice" name="total_price" step="0.01" value="0.00" disabled>
+          <label><i class="fas fa-calculator"></i> Total Offer Price </label>
+          <input type="number" id="comboTotalPrice" name="total_price" step="0.01" value="0.00" disabled title="Auto-calculated — not editable">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="width:100%">
+          <small class="muted">These values are auto-calculated based on selected products and update when you add or remove products. They cannot be edited manually.</small>
         </div>
       </div>
       <div class="form-group">
@@ -1292,12 +1297,17 @@ async function editCombo(code) {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label><i class="fas fa-tags"></i> Normal Price (MRP)</label>
-            <input type="number" id="comboEditNormalPrice" name="normal_price" step="0.01" value="${escapeHtml(String(comboNormalVal))}" disabled>
+            <label><i class="fas fa-tags"></i> Normal Price (MRP) </label>
+            <input type="number" id="comboEditNormalPrice" name="normal_price" step="0.01" value="${escapeHtml(String(comboNormalVal))}" disabled title="Auto-calculated — not editable">
           </div>
           <div class="form-group">
-            <label><i class="fas fa-calculator"></i> Total Price</label>
-            <input type="number" id="comboEditTotalPrice" name="total_price" step="0.01" value="${escapeHtml(String(comboTotalVal))}" disabled>
+            <label><i class="fas fa-calculator"></i> Total Offer Price</label>
+            <input type="number" id="comboEditTotalPrice" name="total_price" step="0.01" value="${escapeHtml(String(comboTotalVal))}" disabled title="Auto-calculated — not editable">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="width:100%">
+            <small class="muted">These values are auto-calculated based on selected products and update when you add or remove products. They cannot be edited manually.</small>
           </div>
         </div>
         <div class="form-group">
