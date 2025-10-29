@@ -138,6 +138,15 @@ def get_product(product_code: str, db: Session = Depends(get_db)):
     return product
 
 
+@router.get("/products/id/{product_id}", response_model=ProductResponse)
+def get_product_by_id(product_id: int, db: Session = Depends(get_db)):
+    """Get a single product by database id"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+
 @router.get("/products/category/{category_name}", response_model=PaginatedResponse[ProductResponse])
 def get_products_by_category_name(
     category_name: str,
