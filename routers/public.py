@@ -127,16 +127,20 @@ def get_products(
     
     # Apply pagination
     items, meta = paginate_query(query, page, page_size)
-    # Recompute and persist totals for each combo before returning so values reflect current product prices
+    # Recompute and persist totals for active combos so values reflect current product prices.
+    # We recompute combos here frequently (on product listing) so combo totals stay up-to-date.
     try:
-        for combo in items:
+        combos_to_update = db.query(Combo).filter(Combo.is_active == True).all()
+        for combo in combos_to_update:
             try:
                 recompute_and_update_combo_prices(db, combo)
             except Exception:
+                # ignore individual combo errors and continue
                 pass
     except Exception:
         # ignore any recompute errors to avoid breaking reads
         pass
+
     return PaginatedResponse(items=items, meta=meta)
 
 
@@ -197,6 +201,16 @@ def get_products_by_category_name(
         query = query.order_by(asc(Product.created_at))
     
     items, meta = paginate_query(query, page, page_size)
+    # Recompute and persist totals for combos in this page so returned values are up-to-date
+    try:
+        for combo in items:
+            try:
+                recompute_and_update_combo_prices(db, combo)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     return PaginatedResponse(items=items, meta=meta)
 
 
@@ -255,6 +269,16 @@ def get_combos(
     query = db.query(Combo).filter(
         Combo.is_active == is_active
     ).order_by(desc(Combo.created_at))
+    # Recompute and persist totals to ensure up-to-date values
+    try:
+        combos_to_update = db.query(Combo).filter(Combo.is_active == True).all()
+        for combo in combos_to_update:
+            try:
+                recompute_and_update_combo_prices(db, combo)
+            except Exception:
+                pass
+    except Exception:
+        pass
     
     items, meta = paginate_query(query, page, page_size)
     return PaginatedResponse(items=items, meta=meta)
