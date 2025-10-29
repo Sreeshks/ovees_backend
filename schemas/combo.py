@@ -40,8 +40,9 @@ class ComboProductResponse(BaseModel):
 class ComboResponse(ComboBase):
     id: int
     combo_code: str
-    total_price: float
-    normal_price: float
+    # Totals may be zero for empty combos; allow zero and above
+    total_price: float = Field(..., ge=0)
+    normal_price: float = Field(..., ge=0)
     products: List[ComboProductResponse]
     created_at: datetime
     updated_at: datetime
