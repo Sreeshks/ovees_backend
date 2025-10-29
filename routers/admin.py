@@ -24,6 +24,7 @@ from utils.auth import (
     get_current_admin, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from utils.cloudinary_config import upload_image, upload_multiple_images, delete_image
+from utils.helpers import recompute_and_update_combo_prices
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -457,8 +458,22 @@ def create_combo(
     if len(products) != len(product_ids):
         raise HTTPException(status_code=404, detail="One or more products not found")
     
-    # Create combo
+    # Compute auto-calculated prices (normal_price = sum of products' normal_price; total_price uses offer_price when present)
+    product_map = {p.id: p for p in products}
+    normal_price_sum = 0.0
+    effective_total = 0.0
+    for item in combo.products:
+        p = product_map.get(item.product_id)
+        qty = item.quantity or 1
+        np = float(p.normal_price or 0)
+        eff = float(p.offer_price) if (p.offer_price is not None) else np
+        normal_price_sum += np * qty
+        effective_total += eff * qty
+
+    # Create combo (include computed fields)
     combo_data = combo.dict(exclude={"products"})
+    combo_data['normal_price'] = normal_price_sum
+    combo_data['total_price'] = effective_total
     new_combo = Combo(**combo_data)
     db.add(new_combo)
     db.commit()
@@ -475,6 +490,11 @@ def create_combo(
     
     db.commit()
     db.refresh(new_combo)
+    # Ensure computed totals are in-sync with latest product prices (authoritative)
+    try:
+        recompute_and_update_combo_prices(db, new_combo)
+    except Exception:
+        pass
     return new_combo
 
 
@@ -516,9 +536,28 @@ def update_combo(
                 quantity=item.quantity
             )
             db.add(combo_product)
+        
+        # Recompute auto-calculated prices after replacing products
+        product_map = {p.id: p for p in products}
+        normal_price_sum = 0.0
+        effective_total = 0.0
+        for item in combo.products:
+            p = product_map.get(item.product_id)
+            qty = item.quantity or 1
+            np = float(p.normal_price or 0)
+            eff = float(p.offer_price) if (p.offer_price is not None) else np
+            normal_price_sum += np * qty
+            effective_total += eff * qty
+        db_combo.normal_price = normal_price_sum
+        db_combo.total_price = effective_total
     
     db.commit()
     db.refresh(db_combo)
+    # Recompute totals in case product prices changed or quantities updated
+    try:
+        recompute_and_update_combo_prices(db, db_combo)
+    except Exception:
+        pass
     return db_combo
 
 

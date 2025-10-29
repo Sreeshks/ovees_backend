@@ -1098,13 +1098,17 @@ async function loadCombos() {
     res.items.forEach(c => {
       const card = document.createElement('div');
       card.className = 'item-card';
-      const priceDisplay = (c.combo_price !== undefined && c.combo_price !== null) ? `₹${c.combo_price}` : '—';
+      const comboPriceDisplay = (c.combo_price !== undefined && c.combo_price !== null) ? `₹${c.combo_price}` : '—';
+      const totalPriceDisplay = (c.total_price !== undefined && c.total_price !== null) ? `₹${c.total_price}` : '—';
+      const normalPriceDisplay = (c.normal_price !== undefined && c.normal_price !== null) ? `₹${c.normal_price}` : '—';
       card.innerHTML = `
         <div class="item-content">
           <h3 class="item-title"><i class="fas fa-layer-group"></i> ${escapeHtml(c.name || '')}</h3>
           <div class="item-meta">
             <span><i class="fas fa-barcode"></i> ${escapeHtml(c.combo_code || '')}</span>
-            <span><i class="fas fa-rupee-sign"></i> ${priceDisplay}</span>
+            <span><i class="fas fa-rupee-sign"></i> ${comboPriceDisplay} <small class="muted">(Combo)</small></span>
+            <span><i class="fas fa-calculator"></i> ${totalPriceDisplay} <small class="muted">(Total)</small></span>
+            <span><i class="fas fa-tags"></i> ${normalPriceDisplay} <small class="muted">(MRP)</small></span>
             ${c.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}
           </div>
           <div class="item-actions">
@@ -1148,6 +1152,16 @@ function showCreateCombo() {
             <option value="true">Active</option>
             <option value="false">Inactive</option>
           </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label><i class="fas fa-tags"></i> Normal Price (MRP)</label>
+          <input type="number" id="comboNormalPrice" name="normal_price" step="0.01" value="0.00" disabled>
+        </div>
+        <div class="form-group">
+          <label><i class="fas fa-calculator"></i> Total Price</label>
+          <input type="number" id="comboTotalPrice" name="total_price" step="0.01" value="0.00" disabled>
         </div>
       </div>
       <div class="form-group">
@@ -1249,6 +1263,8 @@ async function editCombo(code) {
     }).filter(Boolean).join(', ');
 
     const comboPriceVal = combo.combo_price !== undefined && combo.combo_price !== null ? combo.combo_price : (combo.price !== undefined ? combo.price : '');
+    const comboNormalVal = combo.normal_price !== undefined && combo.normal_price !== null ? combo.normal_price : '';
+    const comboTotalVal = combo.total_price !== undefined && combo.total_price !== null ? combo.total_price : '';
   const content = `
       <form id="comboForm" onsubmit="updateCombo(event, '${escapeHtml(code)}')">
         <div class="form-row">
@@ -1272,6 +1288,16 @@ async function editCombo(code) {
               <option value="true" ${combo.is_active ? 'selected' : ''}>Active</option>
               <option value="false" ${!combo.is_active ? 'selected' : ''}>Inactive</option>
             </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><i class="fas fa-tags"></i> Normal Price (MRP)</label>
+            <input type="number" id="comboEditNormalPrice" name="normal_price" step="0.01" value="${escapeHtml(String(comboNormalVal))}" disabled>
+          </div>
+          <div class="form-group">
+            <label><i class="fas fa-calculator"></i> Total Price</label>
+            <input type="number" id="comboEditTotalPrice" name="total_price" step="0.01" value="${escapeHtml(String(comboTotalVal))}" disabled>
           </div>
         </div>
         <div class="form-group">
@@ -1539,6 +1565,8 @@ function setupComboSelector(prefix, initial) {
         <button type="button" class="btn" onclick="window.removeComboProduct_${prefix}(${p.id})" style="padding:6px 8px;min-width:24px">&times;</button>
       </div>
     `).join('');
+    // update totals display if present
+    try { updateTotals(); } catch (e) { /* ignore if not available */ }
   }
 
   // Public remove function (namespaced)
@@ -1546,6 +1574,7 @@ function setupComboSelector(prefix, initial) {
     window[prefix + 'SelectedList'] = window[prefix + 'SelectedList'].filter(x => x.id !== id);
     renderSelected();
     updateHidden();
+    try { updateTotals(); } catch (e) {}
   };
 
   window['addComboProduct_' + prefix] = function(product) {
@@ -1554,7 +1583,33 @@ function setupComboSelector(prefix, initial) {
     window[prefix + 'SelectedList'].push(product);
     renderSelected();
     updateHidden();
+    try { updateTotals(); } catch (e) {}
   };
+
+  // Compute and write totals to matching inputs (if present)
+  function updateTotals() {
+    const list = window[prefix + 'SelectedList'] || [];
+    let total_price = 0.0;
+    let normal_price = 0.0;
+    list.forEach(p => {
+      const qty = (p.quantity && Number(p.quantity)) ? Number(p.quantity) : 1;
+      const np = (p.normal_price !== undefined && p.normal_price !== null) ? Number(p.normal_price) : (p.normalPrice !== undefined ? Number(p.normalPrice) : 0);
+      const eff = (p.offer_price !== undefined && p.offer_price !== null) ? Number(p.offer_price) : (p.offerPrice !== undefined ? Number(p.offerPrice) : np);
+      normal_price += np * qty;
+      total_price += eff * qty;
+    });
+    // set to inputs if they exist
+    const tp = document.getElementById(prefix + 'TotalPrice') || document.getElementById(prefix + 'TotalPrice'.replace('TotalPrice','TotalPrice'));
+    const npEl = document.getElementById(prefix + 'NormalPrice') || document.getElementById(prefix + 'NormalPrice'.replace('NormalPrice','NormalPrice'));
+    // also support ids used in our create/edit forms
+    const tpAlt = document.getElementById(prefix + 'TotalPrice') || document.getElementById(prefix + 'TotalPrice') || document.getElementById(prefix + 'TotalPrice');
+    // direct ids we used: comboTotalPrice, comboNormalPrice, comboEditTotalPrice, comboEditNormalPrice
+    const combos = [document.getElementById('comboTotalPrice'), document.getElementById('comboNormalPrice'), document.getElementById('comboEditTotalPrice'), document.getElementById('comboEditNormalPrice')];
+    combos.forEach(el => { if (el) {
+      if (el.id.toLowerCase().includes('normal')) el.value = normal_price.toFixed(2);
+      else el.value = total_price.toFixed(2);
+    }});
+  }
 
   // search
   let debounceTimer = null;
@@ -1615,6 +1670,25 @@ function setupComboSelector(prefix, initial) {
     });
     renderSelected();
     updateHidden();
+    // Fetch full product details for initial ids so totals and names/prices display correctly
+    (async () => {
+      try {
+        const idsToFetch = window[prefix + 'SelectedList'].map(x => x.id);
+        if (!idsToFetch.length) return;
+        const promises = idsToFetch.map(id => fetch(`/products/id/${id}`).then(r => r.ok ? r.json() : null).catch(() => null));
+        const results = await Promise.all(promises);
+        // Replace placeholders with real data where possible
+        window[prefix + 'SelectedList'] = window[prefix + 'SelectedList'].map(p => {
+          const found = results.find(r => r && (r.id === p.id || r.product_id === p.id));
+          if (found) return Object.assign({}, p, { name: found.name, product_code: found.product_code, normal_price: found.normal_price, offer_price: found.offer_price });
+          return p;
+        });
+        renderSelected();
+        updateHidden();
+      } catch (e) {
+        // ignore
+      }
+    })();
   }
 }
 

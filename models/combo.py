@@ -12,6 +12,9 @@ class Combo(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     combo_price = Column(Float, nullable=False)
+    # Auto-calculated prices
+    total_price = Column(Float, nullable=False, default=0.0)  # effective total (uses offer_price when present)
+    normal_price = Column(Float, nullable=False, default=0.0)  # sum of products' normal_price
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

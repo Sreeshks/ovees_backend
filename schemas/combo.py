@@ -40,6 +40,8 @@ class ComboProductResponse(BaseModel):
 class ComboResponse(ComboBase):
     id: int
     combo_code: str
+    total_price: float
+    normal_price: float
     products: List[ComboProductResponse]
     created_at: datetime
     updated_at: datetime

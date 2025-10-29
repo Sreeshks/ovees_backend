@@ -9,6 +9,7 @@ from schemas import ProductResponse, CategoryResponse, ComboResponse, NewArrival
 from schemas import PaginatedResponse
 from utils.cloudinary_config import get_optimized_url, get_thumbnail_url
 from utils.pagination import paginate_query
+from utils.helpers import recompute_and_update_combo_prices
 
 router = APIRouter(tags=["Public"])
 
@@ -126,6 +127,16 @@ def get_products(
     
     # Apply pagination
     items, meta = paginate_query(query, page, page_size)
+    # Recompute and persist totals for each combo before returning so values reflect current product prices
+    try:
+        for combo in items:
+            try:
+                recompute_and_update_combo_prices(db, combo)
+            except Exception:
+                pass
+    except Exception:
+        # ignore any recompute errors to avoid breaking reads
+        pass
     return PaginatedResponse(items=items, meta=meta)
 
 
@@ -255,6 +266,11 @@ def get_combo(combo_code: str, db: Session = Depends(get_db)):
     combo = db.query(Combo).filter(Combo.combo_code == combo_code).first()
     if not combo:
         raise HTTPException(status_code=404, detail="Combo not found")
+    # Recompute and persist totals to ensure up-to-date values
+    try:
+        recompute_and_update_combo_prices(db, combo)
+    except Exception:
+        pass
     return combo
 
 
