@@ -12,8 +12,11 @@ fastapi==0.119.0
 h11==0.16.0
 httptools==0.7.1
 idna==3.11
-Jinja2==3.1.2
+Jinja2==3.1.6
+mangum==0.19.0
+MarkupSafe==3.0.3
 passlib==1.7.4
+psycopg2-binary==2.9.11
 pyasn1==0.6.1
 pycparser==2.23
 pydantic==2.12.3
