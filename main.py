@@ -4,12 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
-
+load_dotenv()
 from database import init_db
 from routers import admin_router, public_router
 
-# Load environment variables
-load_dotenv()
+# # Load environment variables
+# load_dotenv()
 
 # Lifespan context manager for startup/shutdown events
 @asynccontextmanager
