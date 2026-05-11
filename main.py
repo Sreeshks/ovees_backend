@@ -4,22 +4,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
+
+# Load environment variables before importing modules that read them.
 load_dotenv()
+
 from database import init_db
 from routers import admin_router, public_router
-
-# # Load environment variables
-# load_dotenv()
 
 # Lifespan context manager for startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     init_db()
-    print("✅ Database initialized successfully!")
+    print("Database initialized successfully!")
     yield
     # Shutdown (cleanup if needed)
-    print("👋 Shutting down...")
+    print("Shutting down...")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -67,4 +67,7 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("ENV", "development").lower() == "development"
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload)
